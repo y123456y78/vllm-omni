@@ -561,7 +561,10 @@ class GPUARModelRunner(OmniGPUModelRunner):
                             if sub_dict:
                                 mm_payload[k] = sub_dict
                         elif isinstance(v, list):
-                            element = v[0]
+                            if len(v) > 0:
+                                element = v[idx]
+                            else:
+                                element = v[0]
                             if isinstance(element, torch.Tensor):
                                 element = element.detach().to("cpu").contiguous()
                             mm_payload[k] = element

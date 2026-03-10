@@ -26,8 +26,9 @@ from vllm_omni.outputs import OmniRequestOutput
 
 logger = init_logger(__name__)
 
-# TTS Configuration (currently supports Qwen3-TTS)
-_TTS_MODEL_STAGES: set[str] = {"qwen3_tts"}
+_MISTRAL_TTS_MODEL_STAGES = {"audio_generation"}
+_QWEN3_TTS_MODEL_STAGES = {"qwen3_tts"}
+_TTS_MODEL_STAGES: set[str] = _MISTRAL_TTS_MODEL_STAGES | _QWEN3_TTS_MODEL_STAGES
 _TTS_LANGUAGES: set[str] = {
     "Auto",
     "Chinese",
@@ -97,6 +98,9 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
         self._tts_stage = self._find_tts_stage()
         self._is_tts = self._tts_stage is not None
 
+        # Determine TTS model type: "qwen3_tts", "mistral_tts", or None
+        self._tts_model_type = self._detect_tts_model_type()
+
         # Cache TTS configuration values (computed once, reused per request)
         self._max_instructions_length = self._compute_max_instructions_length()
 
@@ -156,6 +160,17 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
                 return stage
         return None
 
+    def _detect_tts_model_type(self) -> str | None:
+        """Detect TTS model type from the stage's model_stage attribute."""
+        if self._tts_stage is None:
+            return None
+        model_stage = getattr(self._tts_stage, "model_stage", None)
+        if model_stage in _QWEN3_TTS_MODEL_STAGES:
+            return "qwen3_tts"
+        if model_stage in _MISTRAL_TTS_MODEL_STAGES:
+            return "mistral_tts"
+        return None
+
     def _compute_max_instructions_length(self) -> int:
         """Compute max instructions length with precedence: CLI > stage config > default.
 
@@ -178,20 +193,37 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
     def _load_supported_speakers(self) -> set[str]:
         """Load supported speakers (case-insensitive) from the model configuration."""
         try:
-            talker_config = self.engine_client.model_config.hf_config.talker_config
-
+            if self._tts_model_type == "qwen3_tts":
+                config = self.engine_client.model_config.hf_config.talker_config
+            elif self._tts_model_type == "mistral_tts":
+                config = self.engine_client.model_config.hf_config.audio_config
             # Check for speakers in either spk_id or speaker_id
             for attr_name in ["spk_id", "speaker_id"]:
-                speakers_dict = getattr(talker_config, attr_name, None)
+                if isinstance(config, dict):
+                    speakers_dict = config.get(attr_name)
+                else:
+                    speakers_dict = getattr(config, attr_name, None)
                 if speakers_dict and isinstance(speakers_dict, dict):
-                    # Normalize to lowercase for case-insensitive matching
                     return {speaker.lower() for speaker in speakers_dict.keys()}
 
-            logger.warning("No speakers found in talker_config (checked spk_id and speaker_id)")
+            logger.warning("No speakers found in config (checked spk_id and speaker_id)")
         except Exception as e:
             logger.warning(f"Could not load speakers from model config: {e}")
 
         return set()
+
+    def _get_tts_tokenizer(self):
+        """Lazy-load and cache the TTS tokenizer."""
+        if self._tts_tokenizer is None:
+            from transformers import AutoTokenizer
+
+            model_name = self.engine_client.model_config.model
+            self._tts_tokenizer = AutoTokenizer.from_pretrained(
+                model_name,
+                trust_remote_code=True,
+                padding_side="left",
+            )
+        return self._tts_tokenizer
 
     def _estimate_ref_code_len(self, ref_audio: object) -> int | None:
         """Estimate ref_code length from ref_audio waveform without running the codec.
@@ -235,22 +267,14 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
                 Qwen3TTSTalkerForConditionalGeneration,
             )
 
-            if self._tts_tokenizer is None:
-                from transformers import AutoTokenizer
-
-                model_name = self.engine_client.model_config.model
-                self._tts_tokenizer = AutoTokenizer.from_pretrained(
-                    model_name,
-                    trust_remote_code=True,
-                    padding_side="left",
-                )
+            tokenizer = self._get_tts_tokenizer()
             hf_config = self.engine_client.model_config.hf_config
             talker_config = hf_config.talker_config
             task_type = (tts_params.get("task_type") or ["CustomVoice"])[0]
             return Qwen3TTSTalkerForConditionalGeneration.estimate_prompt_len_from_additional_information(
                 additional_information=tts_params,
                 task_type=task_type,
-                tokenize_prompt=lambda t: self._tts_tokenizer(t, padding=False)["input_ids"],
+                tokenize_prompt=lambda t: tokenizer(t, padding=False)["input_ids"],
                 codec_language_id=getattr(talker_config, "codec_language_id", None),
                 spk_is_dialect=getattr(talker_config, "spk_is_dialect", None),
                 estimate_ref_code_len=self._estimate_ref_code_len,
@@ -718,6 +742,25 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
 
         return params
 
+    # ---- Mistral TTS helpers ----
+
+    async def _build_mistral_prompt(self, request: OpenAICreateSpeechRequest, tts_params: dict[str, Any]) -> dict[str, Any]:
+        """Build Mistral TTS engine prompt from shared TTS parameters."""
+        from mistral_common.protocol.speech.request import SpeechRequest
+
+        text = tts_params["text"][0]
+        voice = tts_params.get("speaker", ["female"])[0]
+
+        instruct_tokenizer = self._get_tts_tokenizer().tokenizer.instruct_tokenizer
+        tokens = instruct_tokenizer.encode_speech_request(
+            SpeechRequest(input=text, voice=voice)
+        ).tokens
+
+        return {
+            "prompt_token_ids": tokens,
+            "additional_information": {"voice": [voice]},
+        }
+
     async def create_speech(
         self,
         request: OpenAICreateSpeechRequest,
@@ -760,15 +803,18 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
                     return self.create_error_response(validation_error)
 
                 tts_params = self._build_tts_params(request)
-                if request.ref_audio is not None:
-                    wav_list, sr = await self._resolve_ref_audio(request.ref_audio)
-                    tts_params["ref_audio"] = [[wav_list, sr]]
 
-                # Prompt length must match model-side embeddings; values are placeholders.
-                ph_len = self._estimate_prompt_len(tts_params)
-                prompt = {"prompt_token_ids": [1] * ph_len, "additional_information": tts_params}
+                if self._tts_model_type == "qwen3_tts":
+                    if request.ref_audio is not None:
+                        wav_list, sr = await self._resolve_ref_audio(request.ref_audio)
+                        tts_params["ref_audio"] = [[wav_list, sr]]
+
+                    # Prompt length must match model-side embeddings; values are placeholders.
+                    ph_len = self._estimate_prompt_len(tts_params)
+                    prompt = {"prompt_token_ids": [1] * ph_len, "additional_information": tts_params}
+                else:  # mistral_tts
+                    prompt = await self._build_mistral_prompt(request, tts_params)
             else:
-                tts_params = {}
                 prompt = {"prompt": request.input}
 
             logger.info(

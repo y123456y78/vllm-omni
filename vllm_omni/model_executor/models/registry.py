@@ -124,6 +124,21 @@ _OMNI_MODELS = {
         "hunyuan_image3",
         "HunyuanImage3ForConditionalGeneration",
     ),
+    "MistralTTSForConditionalGeneration": (
+        "mistral_tts",
+        "mistral_tts",
+        "MistralTTSForConditionalGeneration",
+    ),
+    "MistralTTSAudioGeneration": (
+        "mistral_tts",
+        "mistral_tts_audio_generation",
+        "MistralTTSAudioGenerationForConditionalGeneration",
+    ),
+    "MistralTTSAudioTokenizer": (
+        "mistral_tts",
+        "mistral_tts_audio_tokenizer",
+        "MistralTTSAudioTokenizer",
+    ),
 }
 
 
