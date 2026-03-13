@@ -17,6 +17,9 @@ def _register_omni_hf_configs() -> None:
         from transformers import AutoConfig
 
         from vllm_omni.model_executor.models.cosyvoice3.config import CosyVoice3Config
+        from vllm_omni.model_executor.models.mistral_tts.configuration_mistral_tts import (
+            MistralTTSConfig,
+        )
         from vllm_omni.model_executor.models.qwen3_tts.configuration_qwen3_tts import (
             Qwen3TTSConfig,
         )
@@ -24,12 +27,16 @@ def _register_omni_hf_configs() -> None:
         logger.warning("Skipping omni HF config registration due to import error: %s", exc)
         return
 
-    try:
-        AutoConfig.register("qwen3_tts", Qwen3TTSConfig)
-        AutoConfig.register("cosyvoice3", CosyVoice3Config)
-    except ValueError:
-        # Already registered elsewhere; ignore.
-        return
+    for model_type, config_cls in [
+        ("qwen3_tts", Qwen3TTSConfig),
+        ("cosyvoice3", CosyVoice3Config),
+        ("mistral", MistralTTSConfig),
+    ]:
+        try:
+            AutoConfig.register(model_type, config_cls)
+        except ValueError:
+            # Already registered elsewhere; ignore.
+            pass
 
 
 def register_omni_models_to_vllm():
