@@ -56,6 +56,7 @@ class CUDAGraphAcousticTransformerWrapper:
         # Graph storage
         self.graphs: dict[int, CUDAGraph] = {}
         self.static_inputs: dict[int, torch.Tensor] = {}
+        self.static_noise: dict[int, torch.Tensor] = {}
         self.static_fake_eos: dict[int, torch.Tensor] = {}
         self.static_audio_codes: dict[int, torch.Tensor] = {}
 
@@ -106,7 +107,7 @@ class CUDAGraphAcousticTransformerWrapper:
             len(self.capture_sizes),
         )
 
-    def _forward_cudagraph_compatible(self, hidden_states: torch.Tensor):
+    def _forward_cudagraph_compatible(self, hidden_states: torch.Tensor, noise: torch.Tensor | None = None):
         """
         The actual computation captured by the CUDA graph.
 
@@ -116,6 +117,8 @@ class CUDAGraphAcousticTransformerWrapper:
         - Uses pre-created timesteps buffer instead of torch.linspace
         - Uses pre-created scalar tensors for torch.where
         - Calls _predict_velocity directly
+        - Uses a pre-allocated noise buffer to avoid baking random state
+          into the CUDA graph
         """
         at = self.acoustic_transformer
         B = hidden_states.shape[0]
@@ -131,7 +134,10 @@ class CUDAGraphAcousticTransformerWrapper:
         # --- Flow matching: Euler ODE ---
         should_decode = semantic_code.squeeze(1) != self.end_audio_token_id
 
-        x = torch.randn(B, self.n_acoustic_codebook, device=hidden_states.device, dtype=hidden_states.dtype)
+        if noise is not None:
+            x = noise
+        else:
+            x = torch.randn(B, self.n_acoustic_codebook, device=hidden_states.device, dtype=hidden_states.dtype)
 
         # Pre-compute zero hidden states for unconditional CFG branch
         hidden_states_zero = torch.zeros_like(hidden_states)
@@ -183,20 +189,24 @@ class CUDAGraphAcousticTransformerWrapper:
     ):
         """Capture a CUDA graph for a specific batch size."""
         static_input = torch.zeros(size, hidden_dim, device=device, dtype=dtype)
+        static_noise = torch.randn(size, self.n_acoustic_codebook, device=device, dtype=dtype)
 
         # Stabilizing eager run
         with torch.no_grad():
-            _ = self._forward_cudagraph_compatible(static_input)
+            _ = self._forward_cudagraph_compatible(static_input, noise=static_noise)
 
         torch.cuda.synchronize(device)
 
         graph = CUDAGraph()
         with torch.no_grad():
             with torch.cuda.graph(graph):
-                static_fake_eos, static_audio_codes = self._forward_cudagraph_compatible(static_input)
+                static_fake_eos, static_audio_codes = self._forward_cudagraph_compatible(
+                    static_input, noise=static_noise
+                )
 
         self.graphs[size] = graph
         self.static_inputs[size] = static_input
+        self.static_noise[size] = static_noise
         self.static_fake_eos[size] = static_fake_eos
         self.static_audio_codes[size] = static_audio_codes
 
@@ -230,6 +240,10 @@ class CUDAGraphAcousticTransformerWrapper:
         # Zero static input, then copy actual data
         self.static_inputs[padded_size].zero_()
         self.static_inputs[padded_size][:actual_size] = hidden_states
+
+        # Fill noise buffer with fresh random values before replay so the
+        # flow-matching ODE starts from different initial noise each time.
+        self.static_noise[padded_size].normal_()
 
         # Replay captured graph
         self.graphs[padded_size].replay()
