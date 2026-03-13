@@ -480,6 +480,49 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
 
     def _validate_tts_request(self, request: OpenAICreateSpeechRequest) -> str | None:
         """Validate TTS request parameters. Returns error message or None."""
+        if self._tts_model_type == "mistral_tts":
+            return self._validate_mistral_tts_request(request)
+        return self._validate_qwen_tts_request(request)
+
+    def _validate_ref_audio_format(self, ref_audio: str) -> str | None:
+        """Validate ref_audio is a supported URI format. Returns error or None."""
+        if not (
+            ref_audio.startswith(("http://", "https://"))
+            or ref_audio.startswith("data:")
+            or ref_audio.startswith("file://")
+        ):
+            return "ref_audio must be a URL (http/https), base64 data URL (data:...), or file URI (file://...)"
+        return None
+
+    def _validate_mistral_tts_request(self, request: OpenAICreateSpeechRequest) -> str | None:
+        """Validate Mistral TTS request parameters. Returns error message or None."""
+        if not request.input or not request.input.strip():
+            return "Input text cannot be empty"
+
+        # Mistral TTS requires either a preset voice or ref_audio for voice cloning.
+        if request.voice is None and request.ref_audio is None:
+            return "Either 'voice' (preset speaker) or 'ref_audio' (voice cloning) must be provided"
+
+        if request.ref_audio is not None:
+            fmt_err = self._validate_ref_audio_format(request.ref_audio)
+            if fmt_err:
+                return fmt_err
+
+        if request.voice is not None:
+            request.voice = request.voice.lower()
+            if self.supported_speakers and request.voice not in self.supported_speakers:
+                return f"Invalid speaker '{request.voice}'. Supported: {', '.join(sorted(self.supported_speakers))}"
+
+        if request.max_new_tokens is not None:
+            if request.max_new_tokens < _TTS_MAX_NEW_TOKENS_MIN:
+                return f"max_new_tokens must be at least {_TTS_MAX_NEW_TOKENS_MIN}"
+            if request.max_new_tokens > _TTS_MAX_NEW_TOKENS_MAX:
+                return f"max_new_tokens cannot exceed {_TTS_MAX_NEW_TOKENS_MAX}"
+
+        return None
+
+    def _validate_qwen_tts_request(self, request: OpenAICreateSpeechRequest) -> str | None:
+        """Validate Qwen TTS request parameters. Returns error message or None."""
         # Infer Base task when ref_audio or ref_text is provided without explicit task_type.
         if request.task_type is None and (request.ref_audio is not None or request.ref_text is not None):
             request.task_type = "Base"
@@ -513,13 +556,9 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
             if request.voice is None:
                 if request.ref_audio is None:
                     return "Base task requires 'ref_audio' for voice cloning"
-                # Validate ref_audio format (include file:// from upstream)
-                if not (
-                    request.ref_audio.startswith(("http://", "https://"))
-                    or request.ref_audio.startswith("data:")
-                    or request.ref_audio.startswith("file://")
-                ):
-                    return "ref_audio must be a URL (http/https), base64 data URL (data:...), or file URI (file://...)"
+                fmt_err = self._validate_ref_audio_format(request.ref_audio)
+                if fmt_err:
+                    return fmt_err
                 # In-context voice cloning (default) requires non-empty ref_text.
                 # x_vector_only_mode skips in-context and only uses speaker embedding.
                 if not request.x_vector_only_mode:
@@ -543,15 +582,9 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
                         return (
                             f"Base task with built-in speaker '{request.voice}' requires 'ref_audio' for voice cloning"
                         )
-                    # Validate ref_audio format for built-in speaker
-                    if not (
-                        request.ref_audio.startswith(("http://", "https://"))
-                        or request.ref_audio.startswith("data:")
-                        or request.ref_audio.startswith("file://")
-                    ):
-                        return (
-                            "ref_audio must be a URL (http/https), base64 data URL (data:...), or file URI (file://...)"
-                        )
+                    fmt_err = self._validate_ref_audio_format(request.ref_audio)
+                    if fmt_err:
+                        return fmt_err
 
         # Validate cross-parameter dependencies
         if task_type != "Base":
@@ -744,22 +777,30 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
 
     # ---- Mistral TTS helpers ----
 
-    async def _build_mistral_prompt(self, request: OpenAICreateSpeechRequest, tts_params: dict[str, Any]) -> dict[str, Any]:
+    async def _build_mistral_prompt(
+        self, request: OpenAICreateSpeechRequest
+    ) -> dict[str, Any]:
         """Build Mistral TTS engine prompt from shared TTS parameters."""
         from mistral_common.protocol.speech.request import SpeechRequest
 
-        text = tts_params["text"][0]
-        voice = tts_params.get("speaker", ["female"])[0]
-
+        text = request.input
+        voice = request.voice
+        ref_audio = request.ref_audio
+        assert voice or ref_audio, "Either voice or ref_audio must be provided"
         instruct_tokenizer = self._get_tts_tokenizer().tokenizer.instruct_tokenizer
-        tokens = instruct_tokenizer.encode_speech_request(
-            SpeechRequest(input=text, voice=voice)
-        ).tokens
-
-        return {
-            "prompt_token_ids": tokens,
-            "additional_information": {"voice": [voice]},
-        }
+        if voice is not None:
+            tokens = instruct_tokenizer.encode_speech_request(SpeechRequest(input=text, voice=voice)).tokens
+            return {
+                "prompt_token_ids": tokens,
+                "additional_information": {"voice": [voice]},
+            }
+        else:
+            tokenized = instruct_tokenizer.encode_speech_request(SpeechRequest(input=text, ref_audio=ref_audio))
+            audio = tokenized.audios[0]
+            return {
+                "prompt_token_ids": tokenized.tokens,
+                "multi_modal_data": {"audio": [(audio.audio_array, audio.sampling_rate)]},
+            }
 
     async def create_speech(
         self,
@@ -813,7 +854,7 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
                     ph_len = self._estimate_prompt_len(tts_params)
                     prompt = {"prompt_token_ids": [1] * ph_len, "additional_information": tts_params}
                 else:  # mistral_tts
-                    prompt = await self._build_mistral_prompt(request, tts_params)
+                    prompt = await self._build_mistral_prompt(request)
             else:
                 prompt = {"prompt": request.input}
 
