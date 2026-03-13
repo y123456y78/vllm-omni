@@ -1,5 +1,6 @@
 from collections.abc import Iterable
 from functools import cached_property
+from pathlib import Path
 
 import regex as re
 import torch
@@ -104,7 +105,8 @@ class MistralTTSForConditionalGeneration(
         self.has_preprocess = False
         self.has_postprocess = False
         self.config = config
-        self.model_dir = vllm_config.model_config.model
+        self.repo_id = vllm_config.model_config.model
+        self.is_hf_model = not Path(self.repo_id).is_dir()
         self.model_stage = vllm_config.model_config.model_stage
         if self.model_stage == "audio_generation":
             self.has_preprocess = True
@@ -123,11 +125,9 @@ class MistralTTSForConditionalGeneration(
             self._cudagraph_acoustic_transformer = None
             self._vllm_config = vllm_config
             speaker_id = config.audio_config.get("speaker_id", None)
-            if speaker_id:
+            if speaker_id and self.is_hf_model:
                 self.voice_to_embedding = {
-                    sid: torch.load(
-                        hf_hub_download(self.model_dir, filename=f"voice_embedding/{sid}.pt")
-                    )
+                    sid: torch.load(hf_hub_download(repo_id=self.repo_id, filename=f"voice_embedding/{sid}.pt"))
                     for sid in speaker_id
                 }
                 logger.info("Available voice embeddings: %s", list(self.voice_to_embedding.keys()))
@@ -349,6 +349,14 @@ class MistralTTSForConditionalGeneration(
         if self.audio_generation is not None:
             for name in self.audio_generation.load_weights(audio_generation_weights):
                 loaded_weights.add(f"audio_generation.{name}")
+
+        # If encoder weights were not in the checkpoint, mark them as
+        # "loaded" so the weight-validation does not fail.
+        # encode_waveforms() will raise at runtime if called without encoder weights.
+        if self.audio_tokenizer is not None and not self.audio_tokenizer._encoder_loaded:
+            for name, _ in self.audio_tokenizer.named_parameters():
+                if name.startswith(self.audio_tokenizer._encoder_weight_prefixes):
+                    loaded_weights.add(f"audio_tokenizer.{name}")
 
         # Capture CUDA graphs for compute_mm_logits after weights are loaded
         self._enable_acoustic_transformer_cudagraph()
