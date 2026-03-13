@@ -594,7 +594,7 @@ class FlowMatchingAudioTransformer(nn.Module):
     def forward(
         self,
         llm_hidden: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> torch.Tensor:
         # llm_hidden: BxD
         semantic_logit = self.semantic_codebook_output(llm_hidden).float()
         semantic_logit[:, empty_audio_token_id] = -float("inf")  # 1 = eoa is allowed
