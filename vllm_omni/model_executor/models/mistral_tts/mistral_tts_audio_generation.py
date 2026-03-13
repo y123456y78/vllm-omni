@@ -37,10 +37,6 @@ from vllm.model_executor.models.utils import (
     init_vllm_registered_model,
     maybe_prefix,
 )
-from vllm.model_executor.models.voxtral import (
-    VoxtralProcessingInfo,
-    VoxtralProcessorAdapter,
-)
 from vllm.multimodal import MULTIMODAL_REGISTRY
 from vllm.multimodal.inputs import (
     MultiModalDataDict,
@@ -50,108 +46,41 @@ from vllm.multimodal.inputs import (
     NestedTensors,
 )
 from vllm.multimodal.parse import AudioProcessorItems, MultiModalDataItems, MultiModalDataParser
-from vllm.multimodal.processing import BaseDummyInputsBuilder, BaseMultiModalProcessor, ProcessorInputs
+from vllm.multimodal.processing import BaseDummyInputsBuilder, BaseMultiModalProcessor
 from vllm.multimodal.processing.processor import (
     MultiModalProcessingInfo,
+    BaseProcessingInfo,
+    ProcessorInputs,
     PromptReplacement,
     PromptUpdate,
+    TimingContext,
 )
 from vllm.sequence import IntermediateTensors
 from vllm.tokenizers import cached_tokenizer_from_config
 from vllm.v1.sample.logits_processor import LogitsProcessors
 from vllm.v1.sample.metadata import SamplingMetadata
 from vllm.v1.sample.sampler import Sampler
+from vllm.tokenizers.mistral import MistralTokenizer
 
 weight_norm = torch.nn.utils.parametrizations.weight_norm
 
 
 logger = init_logger(__name__)
 
-ISO639_1_SUPPORTED_LANGS = {
-    "ar": "Arabic",
-    "nl": "Dutch",
+SUPPORTED_LANGS = {
     "en": "English",
     "fr": "French",
+    "es": "Spanish",
     "de": "German",
+    "ar": "Arabic",
     "hi": "Hindi",
     "it": "Italian",
     "pt": "Portuguese",
-    "es": "Spanish",
 }
 
 
-class StrEnum(str, Enum):
-    # necessary for python 3.12
-    def __str__(self) -> str:
-        return str(self.value)
-
-
-# NOTE(@alexhliu): ideally we import this from mistral_common?
-class SpecialTokens(StrEnum):
-    """Impossible to extend an enum"""
-
-    # public
-    bos = "<s>"
-    eos = "</s>"
-    begin_inst = "[INST]"
-    end_inst = "[/INST]"
-    begin_tools = "[AVAILABLE_TOOLS]"
-    end_tools = "[/AVAILABLE_TOOLS]"
-    begin_tool_results = "[TOOL_RESULTS]"
-    end_tool_results = "[/TOOL_RESULTS]"
-    tool_calls = "[TOOL_CALLS]"
-    args = "[ARGS]"
-    call_id = "[CALL_ID]"
-    img = "[IMG]"
-    img_break = "[IMG_BREAK]"
-    img_end = "[IMG_END]"
-    prefix = "[PREFIX]"
-    middle = "[MIDDLE]"
-    suffix = "[SUFFIX]"
-    # private
-    begin_system = "[SYSTEM_PROMPT]"
-    end_system = "[/SYSTEM_PROMPT]"
-    begin_reference = "[REF]"
-    end_reference = "[/REF]"
-    begin_tool_content = "[TOOL_CONTENT]"
-    # Bounding box for OCR
-    begin_bbox = "[BBOX]"
-    end_bbox = "[/BBOX]"
-    # Reasoning process step separator
-    begin_step = "[STEP]"
-    reasoning = "[REASONING]"
-    verification = "[VERIFICATION]"
-    score = "[SCORE]"
-    end_step = "[/STEP]"
-    # Reasoning
-    begin_think = "[THINK]"
-    end_think = "[/THINK]"
-    # Audio
-    audio = "[AUDIO]"
-    begin_audio = "[BEGIN_AUDIO]"
-    output_audio = "[OUTPUT_AUDIO]"
-    begin_transcript = "[BEGIN_TRANSCRIPT]"
-    end_transcript = "[END_TRANSCRIPT]"
-    transcribe = "[TRANSCRIBE]"
-    text_to_audio = "[NEXT_AUDIO_TEXT]"
-    audio_to_text = "[REPEAT_AUDIO_TEXT]"
-    language_id = "[PRINT_LANGUAGE]"
-    segment_timestamp = "[PRINT_TIME]"
-    segment_speaker = "[PRINT_SPEAKER]"
-    speaker_id = "[SPEAKER_ID]"
-    ctc_blank = "[CTC_BLANK]"
-    streaming_pad = "[STREAMING_PAD]"
-
-
-# hack SpecialTokens since public mistral common haven't got this
-class StrEnum(str, Enum):
-    # necessary for python 3.12
-    def __str__(self) -> str:
-        return str(self.value)
-
-
 # Audio
-class AudioSpecialTokens(StrEnum):
+class AudioSpecialTokens(str, Enum):
     """Special tokens predicted by audio codebook heads.
 
     These tokens are inserted by `audio_tokens_with_pattern`. They are not part of the text vocabulary.
@@ -701,6 +630,14 @@ class FlowMatchingAudioTransformer(nn.Module):
         batch_size = cb0_logit.shape[0]
         temperatures, top_ps, top_ks = [], [], []
         dummy_tensors = lambda v: torch.full((batch_size,), v, device=cb0_logit.device)
+        for _ in range(batch_size):
+            temp = 1.0
+            top_p = 1.0
+            top_k = 1
+            # semantic
+            temperatures.extend([temp])
+            top_ps.extend([top_p])
+            top_ks.extend([top_k])
 
         return SamplingMetadata(
             temperature=_full_tensors(temperatures),
@@ -722,10 +659,13 @@ class FlowMatchingAudioTransformer(nn.Module):
         )
 
 
-class MistralTTSProcessorAdapter(VoxtralProcessorAdapter):
+class MistralTTSProcessorAdapter:
     """
     Provide a HF-compatible interface
     """
+    def __init__(self, tokenizer: MistralTokenizer) -> None:
+        super().__init__()
+        self.tokenizer = tokenizer
 
     # TODO check what are needed for TTS
     @cached_property
@@ -735,6 +675,22 @@ class MistralTTSProcessorAdapter(VoxtralProcessorAdapter):
         # TODO(@alexhliu): how to set sr properly
         audio_encoder.audio_config.sampling_rate = 24000
         return audio_encoder
+
+    @cached_property
+    def audio_token_id(self) -> int:
+        return self._audio_processor.special_ids.audio
+
+    @cached_property
+    def begin_audio_token_id(self) -> int:
+        return self._audio_processor.special_ids.begin_audio
+
+    @cached_property
+    def sampling_rate(self) -> int:
+        return self._audio_processor.audio_config.sampling_rate
+
+    @cached_property
+    def frame_rate(self) -> float:
+        return self._audio_processor.audio_config.frame_rate
 
     def get_num_audio_tokens(
         self,
@@ -825,7 +781,14 @@ class MistralTTSProcessorAdapter(VoxtralProcessorAdapter):
             return BatchFeature({"input_ids": torch.tensor(self.tokenizer(text).input_ids)})
 
 
-class MistralTTSProcessingInfo(VoxtralProcessingInfo):
+class MistralTTSProcessingInfo(BaseProcessingInfo):
+    def get_tokenizer(self) -> MistralTokenizer:
+        tokenizer = cached_tokenizer_from_config(self.ctx.model_config)
+        if not isinstance(tokenizer, MistralTokenizer):
+            raise ValueError("This model requires `--tokenizer-mode mistral`")
+
+        return tokenizer
+
     def get_data_parser(self):
         return MultiModalDataParser(
             target_sr=self.get_hf_processor().sampling_rate,
@@ -835,6 +798,24 @@ class MistralTTSProcessingInfo(VoxtralProcessingInfo):
     def get_hf_processor(self, **kwargs: object) -> MistralTTSProcessorAdapter:
         return MistralTTSProcessorAdapter(self.get_tokenizer())
 
+    def get_supported_mm_limits(self) -> Mapping[str, int | None]:
+        return {"audio": 1}
+
+    def get_mm_max_tokens_per_item(
+        self,
+        seq_len: int,
+        mm_counts: Mapping[str, int],
+    ) -> Mapping[str, int]:
+        return {"audio": self.get_max_audio_tokens()}
+
+    def get_max_audio_tokens(self) -> int:
+        return self.ctx.model_config.max_model_len
+
+    def get_max_audio_array_len(self) -> int:
+        processor = self.get_hf_processor()
+        return self.get_max_audio_tokens() * int(
+            processor.sampling_rate // processor.frame_rate
+        )
 
 class MistralTTSDummyInputsBuilder(BaseDummyInputsBuilder[MistralTTSProcessingInfo]):
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
@@ -863,8 +844,8 @@ class MistralTTSDummyInputsBuilder(BaseDummyInputsBuilder[MistralTTSProcessingIn
         mm_counts: Mapping[str, int],
         mm_options: Mapping[str, Any] | None = None,
     ) -> ProcessorInputs:
-        dummy_mm_data = self.get_dummy_mm_data(seq_len, mm_counts, mm_options)
-        dummy_audios = dummy_mm_data.get("audio", [])
+        dummy_mm_items = self.get_dummy_mm_data(seq_len, mm_counts, mm_options)
+        dummy_audios = dummy_mm_items.get("audio", [])
 
         audio_chunks: list[AudioChunk] = []
         for audio in dummy_audios:
@@ -898,10 +879,11 @@ class MistralTTSDummyInputsBuilder(BaseDummyInputsBuilder[MistralTTSProcessingIn
             36,
             25,
         ]
+        # TODO(chenyo): check if this is still true
         # voxtral tokenizer adds padding to the audio
         # so we need to update the audio arrays
-        dummy_mm_data["audio"] = dummy_audios
-        return ProcessorInputs(prompt=dummy_tokens, mm_data=dummy_mm_data)
+        dummy_mm_items["audio"] = dummy_audios
+        return ProcessorInputs(prompt=dummy_tokens, mm_data_items=dummy_mm_items)
 
 
 class MistralTTSMultiModalProcessor(BaseMultiModalProcessor[MistralTTSProcessingInfo]):
@@ -945,19 +927,11 @@ class MistralTTSMultiModalProcessor(BaseMultiModalProcessor[MistralTTSProcessing
 
     def _cached_apply_hf_processor(
         self,
-        prompt: str | list[int],
-        mm_data_items: MultiModalDataItems,
-        hf_processor_mm_kwargs: Mapping[str, object],
-        tokenization_kwargs: Mapping[str, object],
-        mm_uuids: MultiModalUUIDDict | None = None,
+        inputs: ProcessorInputs,
+        timing_ctx: TimingContext,
     ) -> tuple[list[int], MultiModalProcessingInfo, bool]:
-        prompt_ids, mm_info, _ = super()._cached_apply_hf_processor(
-            prompt=prompt,
-            mm_data_items=mm_data_items,
-            hf_processor_mm_kwargs=hf_processor_mm_kwargs,
-            tokenization_kwargs=tokenization_kwargs,
-            mm_uuids=mm_uuids,
-        )
+        prompt_ids, mm_info, _ = super()._cached_apply_hf_processor(inputs, timing_ctx)
+
         # NOTE: The tokens are already inserted by the chat template
         return prompt_ids, mm_info, True
 
@@ -968,7 +942,7 @@ class MistralTTSMultiModalProcessor(BaseMultiModalProcessor[MistralTTSProcessing
     dummy_inputs=MistralTTSDummyInputsBuilder,
 )
 class MistralTTSAudioGenerationForConditionalGeneration(nn.Module, SupportsMultiModal):
-    supported_languages = ISO639_1_SUPPORTED_LANGS
+    supported_languages = SUPPORTED_LANGS
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
@@ -1160,5 +1134,13 @@ class MistralTTSAudioGenerationForConditionalGeneration(nn.Module, SupportsMulti
 
         for name in self.language_model.load_weights(llm_weights_generator()):
             loaded_weights.add(f"language_model.{name}")
+
+        # If encoder weights were not in the checkpoint, mark them as
+        # "loaded" so the weight-validation does not fail.
+        # encode_waveforms() will raise at runtime if called without encoder weights.
+        if not self.audio_tokenizer._encoder_loaded:
+            for name, _ in self.audio_tokenizer.named_parameters():
+                if name.startswith(self.audio_tokenizer._encoder_weight_prefixes):
+                    loaded_weights.add(f"audio_tokenizer.{name}")
 
         return loaded_weights
