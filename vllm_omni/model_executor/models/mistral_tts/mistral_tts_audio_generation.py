@@ -110,7 +110,6 @@ audio_special_tokens = [
 @dataclass
 class AcousticTransformerArgs:
     input_dim: int
-    schedule: str | None
     # Define some defaults
     dim: int = 768
     n_layers: int = 3

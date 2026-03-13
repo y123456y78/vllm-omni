@@ -40,7 +40,6 @@ def run_inference(
     payload: dict[str, Any] = {
         "input": text_prompt,
         "model": model,
-        "task_type": "CustomVoice",
         "response_format": "wav",
         "voice": voice_name,
     }
