@@ -994,7 +994,7 @@ class MistralTTSAudioGenerationForConditionalGeneration(nn.Module, SupportsMulti
     def embed_multimodal(self, **kwargs) -> list[torch.Tensor] | torch.Tensor | tuple[torch.Tensor, ...] | None:
         audio_waveforms, audio_tokens = self._parse_and_validate_audio_arrays(**kwargs)
         if (audio_waveforms is None) and (audio_tokens is None):
-            res = None
+            return None
 
         if audio_waveforms is not None and audio_tokens is None:
             assert audio_tokens is None, f"{audio_tokens=} {audio_waveforms=}"
