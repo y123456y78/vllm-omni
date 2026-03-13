@@ -777,9 +777,7 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
 
     # ---- Mistral TTS helpers ----
 
-    async def _build_mistral_prompt(
-        self, request: OpenAICreateSpeechRequest
-    ) -> dict[str, Any]:
+    async def _build_mistral_prompt(self, request: OpenAICreateSpeechRequest) -> dict[str, Any]:
         """Build Mistral TTS engine prompt from shared TTS parameters."""
         from mistral_common.protocol.speech.request import SpeechRequest
 
@@ -856,6 +854,7 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
                 else:  # mistral_tts
                     prompt = await self._build_mistral_prompt(request)
             else:
+                tts_params = {}
                 prompt = {"prompt": request.input}
 
             logger.info(
