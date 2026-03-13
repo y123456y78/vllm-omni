@@ -9,13 +9,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-try:
-    from flash_attn import flash_attn_func
-    HAS_FLASH_ATTN = True
-except ImportError:
-    flash_attn_func = None
-    HAS_FLASH_ATTN = False
-
 from vllm.config import VllmConfig
 
 from vllm_omni.model_executor.models.mistral_tts.mistral_tts_audio_generation import (
@@ -38,12 +31,6 @@ from vllm.logger import init_logger
 from vllm.model_executor.model_loader.weight_utils import default_weight_loader
 
 logger = init_logger(__name__)
-
-if not HAS_FLASH_ATTN:
-    logger.warning(
-        "flash_attn is not installed. Falling back to PyTorch SDPA for "
-        "audio tokenizer attention. Install flash-attn for better performance."
-    )
 
 weight_norm = torch.nn.utils.parametrizations.weight_norm
 
@@ -88,7 +75,9 @@ class AudioTokenizerArgs:
     layer_scale: bool = True
     layer_scale_init: float | None = None
 
-    # architecture (encoder — only strides kept for decoder window size computation)
+    # architecture (encoder)
+    encoder_transformer_lengths_str: str = "2,2,2,2"
+    encoder_convs_kernels_str: str = "4,4,4,3"
     encoder_convs_strides_str: str = "2,2,2,1"
 
     # architecture (decoder)
@@ -98,11 +87,22 @@ class AudioTokenizerArgs:
 
     def __post_init__(self) -> None:
         assert (
+            len(self.encoder_transformer_lengths) == len(self.encoder_convs_kernels) == len(self.encoder_convs_strides)
+        )
+        assert (
             len(self.decoder_transformer_lengths) == len(self.decoder_convs_kernels) == len(self.decoder_convs_strides)
         )
 
     def __str2list__(self, input_str: str) -> tuple[int, ...]:
         return tuple(int(i) for i in input_str.split(","))
+
+    @property
+    def encoder_transformer_lengths(self) -> tuple[int, ...]:
+        return self.__str2list__(self.encoder_transformer_lengths_str)
+
+    @property
+    def encoder_convs_kernels(self) -> tuple[int, ...]:
+        return self.__str2list__(self.encoder_convs_kernels_str)
 
     @property
     def encoder_convs_strides(self) -> tuple[int, ...]:
@@ -119,6 +119,10 @@ class AudioTokenizerArgs:
     @property
     def decoder_convs_strides(self) -> tuple[int, ...]:
         return self.__str2list__(self.decoder_convs_strides_str)
+
+    @property
+    def frame_rate(self) -> float:
+        return self.sampling_rate / (self.pretransform_patch_size * math.prod(self.encoder_convs_strides))
 
 
 class SemanticCodebook(nn.Module):
@@ -142,6 +146,15 @@ class SemanticCodebook(nn.Module):
             self.register_buffer("_embedding", embedding, persistent=False)
             return embedding
         return self._embedding
+
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        assert x.dtype.is_floating_point, f"Input should be floats, got {x.dtype}"
+        B, D, T = x.shape
+        x = rearrange(x, "b d t -> b t d").view(B * T, D)
+        embedding = self.embedding.to(x.device)
+        distances = torch.cdist(x, embedding, p=2)  # (B*T, V)
+        codes = distances.argmin(dim=-1).view(B, 1, T)
+        return codes
 
     def decode(self, codes: torch.Tensor) -> torch.Tensor:
         assert not codes.dtype.is_floating_point, f"Codes should be integers, got {codes.dtype}"
@@ -170,11 +183,29 @@ class AcousticCodebook(nn.Module):
         self.n_levels = codebook_size
         self.num_codebooks = codebook_dim
 
+    def _quantize(self, x: torch.Tensor, levels: torch.Tensor, ste: bool = True) -> torch.Tensor:
+        scaled_x = ((x + 1) / 2) * (levels - 1)
+        if ste:
+            quant_x = scaled_x + (scaled_x.round() - scaled_x).detach()
+        else:
+            quant_x = scaled_x.round()
+        return quant_x
+
     def _rescale(self, x: torch.Tensor, levels: int | torch.Tensor) -> torch.Tensor:
         return (x * 2 / (levels - 1)) - 1
 
+    def _codes_from_quantized(self, quantized: torch.Tensor) -> torch.Tensor:
+        return quantized.long()
+
     def _quantized_from_codes(self, codes: torch.Tensor, levels: int) -> torch.Tensor:
         return self._rescale(codes, levels)
+
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        assert x.dtype.is_floating_point, f"Input should be floats, got {x.dtype}"
+        x = torch.tanh(x)
+        levels = torch.ones_like(x) * self.n_levels
+        codes = self._codes_from_quantized(self._quantize(x, levels, ste=False))
+        return codes
 
     def decode(self, codes: torch.Tensor, dtype: torch.dtype = torch.float32) -> torch.Tensor:
         assert not codes.dtype.is_floating_point, f"Codes should be integers, got {codes.dtype}"
@@ -222,6 +253,29 @@ class MistralAudioCodebook(nn.Module):
         """List of sizes for all codebooks."""
         return self.semantic_codebook.codebook_sizes + self.acoustic_codebook.codebook_sizes
 
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        """Encode input tensor into discrete codes using both semantic and acoustic codebooks.
+
+        Args:
+            x: Input tensor of shape [B, D, T] where D = semantic_dim + acoustic_dim
+
+        Returns:
+            codes: Tensor of shape [B, K, T] where K = num_codebooks
+        """
+        assert x.dtype.is_floating_point, f"Input should be floats, got {x.dtype}"
+
+        # Split input into semantic and acoustic parts
+        semantic_part = x[:, : self.semantic_dim, :]
+        acoustic_part = x[:, self.semantic_dim :, :]
+
+        # Quantize each part
+        semantic_codes = self.semantic_codebook.encode(semantic_part)
+        acoustic_codes = self.acoustic_codebook.encode(acoustic_part)
+
+        # Combine codes along the codebook dimension
+        codes = torch.cat([semantic_codes, acoustic_codes], dim=1)
+        return codes
+
     def decode(self, codes: torch.Tensor, dtype: torch.dtype = torch.float32) -> torch.Tensor:
         """Decode discrete codes back into continuous representations.
 
@@ -248,6 +302,17 @@ class MistralAudioCodebook(nn.Module):
 
 
 ### Encoder-decoder layers
+
+
+def prepare_for_attention(
+    x: torch.Tensor,
+    time_last: bool = True,
+) -> torch.Tensor:
+    if time_last:
+        x = rearrange(x, "b d t -> (b t) d")
+    else:
+        x = rearrange(x, "b t d -> (b t) d")
+    return x
 
 
 def pad1d(
@@ -448,7 +513,7 @@ class Attention(nn.Module):
                 eps=args.qk_norm_eps,
             )
 
-    def _naive_attention(
+    def _native_attention(
         self,
         xq: torch.Tensor,
         xk: torch.Tensor,
@@ -509,21 +574,7 @@ class Attention(nn.Module):
         xk = xk.view(bsz, seqlen, self.n_local_kv_heads, self.args.head_dim)
         xv = xv.view(bsz, seqlen, self.n_local_kv_heads, self.args.head_dim)
 
-        if HAS_FLASH_ATTN:
-            alibi_slopes = self.alibi_slopes.to(torch.float32)
-            output = flash_attn_func(
-                xq,
-                xk,
-                xv,
-                causal=self.args.causal,
-                window_size=(
-                    self.sliding_window,
-                    0 if self.args.causal else self.sliding_window,
-                ),
-                alibi_slopes=alibi_slopes,
-            )
-        else:
-            output = self._naive_attention(xq, xk, xv)
+        output = self._native_attention(xq, xk, xv)
 
         output = output.view(bsz, seqlen, self.n_local_heads * self.args.head_dim)
         return self.wo(output).squeeze(0)
@@ -658,6 +709,62 @@ class MistralTTSAudioTokenizer(nn.Module):
         self.patch_size = args.pretransform_patch_size
         self.latent_dim = args.semantic_dim + args.acoustic_dim
 
+        self.input_proj = CausalConv1d(
+            args.pretransform_patch_size * args.channels,
+            args.dim,
+            kernel_size=args.patch_proj_kernel_size,
+            use_weight_norm=args.conv_weight_norm,
+            use_bias=False,
+        )
+
+        ### Encoder
+        encoder_blocks: list[nn.Module] = []
+        encoder_transformer_lengths = args.encoder_transformer_lengths
+        encoder_convs_kernels = args.encoder_convs_kernels
+        encoder_convs_strides = args.encoder_convs_strides
+
+        assert encoder_transformer_lengths is not None
+        assert encoder_convs_kernels is not None
+        assert encoder_convs_strides is not None
+
+        # window_size might change at different layer
+        cur_window_size = args.attn_sliding_window_size
+
+        for idx, n_layers in enumerate(encoder_transformer_lengths):
+            # transformer
+            layer_args = deepcopy(args)
+            layer_args.attn_sliding_window_size = cur_window_size
+            assert layer_args.qk_norm, "qk_norm must be True for decoder"
+            encoder_transformer = Transformer(
+                args=layer_args,
+                n_layers=n_layers,
+            )
+            encoder_blocks.append(encoder_transformer)
+            # projection
+            is_last_layer = idx == len(encoder_transformer_lengths) - 1
+            proj_output_dim = self.latent_dim if is_last_layer else args.dim
+            if (
+                (encoder_convs_kernels[idx] != 1)
+                or (encoder_convs_strides[idx] != 1)
+                or is_last_layer  # (args.dim != proj_output_dim)
+            ):
+                encoder_blocks.append(
+                    CausalConv1d(
+                        args.dim,
+                        proj_output_dim,
+                        kernel_size=encoder_convs_kernels[idx],
+                        stride=encoder_convs_strides[idx],
+                        pad_mode="replicate",
+                        use_bias=False,
+                    )
+                )
+                if args.half_attn_window_upon_downsampling and (encoder_convs_strides[idx] > 1):
+                    assert encoder_convs_strides[idx] == 2, "only supporting 2x downsampling"
+                    cur_window_size = cur_window_size // 2
+                    assert cur_window_size >= 2
+
+        self.encoder_blocks = nn.ModuleList(encoder_blocks)
+
         ### Audio token lookup talbe for LLM
         # placed here assuming we will never need to return tokens
         # from encoder to client
@@ -667,14 +774,6 @@ class MistralTTSAudioTokenizer(nn.Module):
         )
 
         ### Decoder
-        # Compute the starting window size for the decoder by simulating
-        # the encoder's downsampling effect on the attention window.
-        cur_window_size = args.attn_sliding_window_size
-        if args.half_attn_window_upon_downsampling:
-            for s in args.encoder_convs_strides:
-                if s > 1:
-                    cur_window_size = cur_window_size // 2
-
         decoder_blocks: list[nn.Module] = []
         decoder_convs_kernels = args.decoder_convs_kernels
         decoder_convs_strides = args.decoder_convs_strides
@@ -735,12 +834,18 @@ class MistralTTSAudioTokenizer(nn.Module):
             use_bias=False,
         )
 
-        scale_factor = math.prod(decoder_convs_strides)
+        scale_factor = math.prod(encoder_convs_strides)
+        assert scale_factor == math.prod(decoder_convs_strides)
         self._frame_rate = args.sampling_rate / (self.patch_size * scale_factor)
         self._sampling_rate = args.sampling_rate
         self._channels = args.channels
         if self._channels != 1:
             raise NotImplementedError
+
+        # Encoder weight prefixes — these may be absent in open-source
+        # checkpoints that only ship decoder / quantizer / embedding weights.
+        self._encoder_weight_prefixes = ("input_proj.", "encoder_blocks.")
+        self._encoder_loaded = False
 
     @property
     def channels(self) -> int:
@@ -784,7 +889,55 @@ class MistralTTSAudioTokenizer(nn.Module):
 
             weight_loader = getattr(param, "weight_loader", default_weight_loader)
             weight_loader(param, loaded_weight)
+            if name.startswith(self._encoder_weight_prefixes):
+                self._encoder_loaded = True
         return name
+
+    def _forward_encoder(self, x: torch.Tensor) -> torch.Tensor:
+        assert x.dim() == 3
+        emb = rearrange(
+            x,
+            "b c (t h) -> b (c h) t",
+            h=self.patch_size,
+        )
+
+        emb = self.input_proj(emb)
+        emb = rearrange(emb, "b d t -> b t d").contiguous()
+
+        for _, block in enumerate(self.encoder_blocks):
+            if type(block) is CausalConv1d:
+                emb = rearrange(emb, "b t d -> b d t")
+                emb = block(emb)
+                emb = rearrange(emb, "b d t -> b t d")
+            else:
+                bsz, _, _ = emb.shape
+                emb = prepare_for_attention(emb, False)  # (b * t, d)
+                emb = block(emb)  # (b * t, d)
+                emb = rearrange(emb, "(b t) d -> b t d", b=bsz)  # (b, t, d)
+
+        emb = rearrange(emb, "b t d -> b d t")
+        return emb
+
+    def _tokenize_audio(self, x: torch.Tensor) -> torch.Tensor:
+        """Encode the given input tensor to quantized representation.
+
+        Args:
+            x (torch.Tensor): Float tensor of shape [B, C, T]
+            n_q (int): number of codebooks, default each dimension is a codebook
+
+        Returns:
+            codes (torch.Tensor): an int tensor of shape [B, K, T]
+                with K the number of codebooks used and T the timestep.
+        """
+        if x.shape[-1] % self.patch_size != 0:
+            pad_length = self.patch_size - (x.shape[-1] % self.patch_size)
+            x = F.pad(x, (0, pad_length), mode="constant", value=0)
+        with torch.autocast(dtype=torch.bfloat16, device_type="cuda"):
+            # bf16 to use alibi bias in flash attn
+            emb = self._forward_encoder(x)  # (b, d, t)
+        codes = self.quantizer.encode(emb)  # (b, k, t)
+
+        return codes
 
     def encode_tokens(self, x: list[torch.Tensor]) -> list[torch.Tensor]:
         audio_embeddings = []
@@ -802,9 +955,25 @@ class MistralTTSAudioTokenizer(nn.Module):
         return audio_embeddings
 
     def encode_waveforms(self, x: list[torch.Tensor]) -> list[torch.Tensor]:
-        raise RuntimeError(
-            "Voice cloning is not provided in open-source version. Please use provided voice."
-        )
+        if not self._encoder_loaded:
+            raise RuntimeError(
+                "encode_waveforms requires encoder weights which are not available in the open-source checkpoint."
+            )
+        audio_codes = []
+        for waveform in x:
+            # TODO(@alexhliu): we can batch this for better performance
+            assert waveform.dim() == 1
+            audio_code = self._tokenize_audio(waveform.unsqueeze(0).unsqueeze(0))  # BxVxL, B==1
+            audio_code = audio_code + len(
+                AudioSpecialTokens.all_special_tokens()
+            )  # TODO(@alexhliu): do this properly somewhere else
+            # there is always EOA after waveform
+            B, V, _ = audio_code.shape
+            eoa = torch.zeros([B, V, 1], dtype=audio_code.dtype, device=audio_code.device)
+            eoa[:, 0, :] = 1
+            audio_code = torch.cat([audio_code, eoa], dim=-1)
+            audio_codes.append(audio_code)
+        return self.encode_tokens(audio_codes)
 
     def _forward_decoder(self, emb: torch.Tensor) -> torch.Tensor:
         emb = rearrange(emb, "b d t -> b t d").contiguous()
