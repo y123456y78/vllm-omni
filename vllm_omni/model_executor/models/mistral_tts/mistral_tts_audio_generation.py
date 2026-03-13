@@ -623,34 +623,22 @@ class FlowMatchingAudioTransformer(nn.Module):
         self,
         cb0_logit: torch.Tensor,
     ) -> SamplingMetadata:
-        def _full_tensors(values: list[int | float]) -> torch.Tensor:
-            return torch.tensor(values, device=cb0_logit.device)
-
         batch_size = cb0_logit.shape[0]
-        temperatures, top_ps, top_ks = [], [], []
-        dummy_tensors = lambda v: torch.full((batch_size,), v, device=cb0_logit.device)
-        for _ in range(batch_size):
-            temp = 1.0
-            top_p = 1.0
-            top_k = 1
-            # semantic
-            temperatures.extend([temp])
-            top_ps.extend([top_p])
-            top_ks.extend([top_k])
+        full = lambda v: torch.full((batch_size,), v, device=cb0_logit.device)
 
         return SamplingMetadata(
-            temperature=_full_tensors(temperatures),
-            top_p=_full_tensors(top_ps),
-            top_k=_full_tensors(top_ks),
+            temperature=full(1.0),
+            top_p=full(1.0),
+            top_k=full(1),
             all_greedy=False,
             all_random=False,
             generators={},
             max_num_logprobs=None,
             no_penalties=True,
             prompt_token_ids=None,
-            frequency_penalties=dummy_tensors(0.0),
-            presence_penalties=dummy_tensors(0.0),
-            repetition_penalties=dummy_tensors(0.0),
+            frequency_penalties=full(0.0),
+            presence_penalties=full(0.0),
+            repetition_penalties=full(0.0),
             output_token_ids=[[] for _ in range(batch_size)],
             allowed_token_ids_mask=None,
             bad_words_token_ids={},
