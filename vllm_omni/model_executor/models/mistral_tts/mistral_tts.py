@@ -338,13 +338,17 @@ class MistralTTSForConditionalGeneration(
                     "mm_audio_embeddings.audio_codebook_embeddings"
                 ) or name.startswith("audio_tokenizer.")
 
-                for pattern, repl in remapping_rules:
-                    if re.fullmatch(pattern, name):
-                        sub_name = re.sub(pattern, repl, name)
-
                 if is_audio_tokenizer and self.audio_tokenizer is not None:
-                    name = self.audio_tokenizer.load_weight((sub_name, w))
-                    loaded_weights.add(f"audio_tokenizer.{sub_name}")
+                    # Remap name only when loading audio_tokenizer (Stage-1).
+                    # Yield the original name in Stage-0 so audio_generation.load_weights()
+                    # can still filter by prefix using its own remapping rules.
+                    remapped = name
+                    for pattern, repl in remapping_rules:
+                        if re.fullmatch(pattern, remapped):
+                            remapped = re.sub(pattern, repl, remapped)
+                    name = self.audio_tokenizer.load_weight((remapped, w))
+                    loaded_weights.add(f"audio_tokenizer.{name}")
+                    continue
 
                 yield (name, w)
 
