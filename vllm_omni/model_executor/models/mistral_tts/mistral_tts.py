@@ -12,6 +12,7 @@ from vllm.model_executor.models.interfaces import SupportsMultiModal
 from vllm.model_executor.models.utils import init_vllm_registered_model, maybe_prefix
 from vllm.multimodal import MULTIMODAL_REGISTRY
 from vllm.sequence import IntermediateTensors
+from vllm.tokenizers import cached_tokenizer_from_config
 from vllm.v1.outputs import SamplerOutput
 from vllm.v1.sample.metadata import SamplingMetadata
 from vllm.v1.sample.sampler import Sampler
@@ -124,6 +125,8 @@ class MistralTTSForConditionalGeneration(
             self.audio_tokenizer = None
             self._cudagraph_acoustic_transformer = None
             self._vllm_config = vllm_config
+            tokenizer = cached_tokenizer_from_config(vllm_config.model_config)
+            self._audio_token_id = tokenizer.instruct.audio_encoder.special_ids.audio
             speaker_id = config.audio_config.get("speaker_id", None)
             if speaker_id and self.is_hf_model:
                 self.voice_to_embedding = {
@@ -186,7 +189,7 @@ class MistralTTSForConditionalGeneration(
         if audio_tokens is not None:
             kwargs = {"audio_tokens": audio_tokens.to(input_ids.device)}
             multimodal_embeddings = self.model.embed_multimodal(**kwargs)
-            if input_ids[0] == 24:
+            if input_ids[0] == self._audio_token_id:
                 input_embeds = multimodal_embeddings[0]
             return input_ids, input_embeds, info_dict
         voice = info_dict.pop("voice", None)
@@ -194,7 +197,7 @@ class MistralTTSForConditionalGeneration(
             if isinstance(voice, list):
                 voice = voice[0]
             multimodal_embeddings = self.voice_to_embedding[voice].to(input_ids.device).clone().detach()
-            is_multimodal = input_ids == 24
+            is_multimodal = input_ids == self._audio_token_id
             input_embeds = self.embed_input_ids(
                 input_ids=input_ids, multimodal_embeddings=multimodal_embeddings, is_multimodal=is_multimodal
             )
