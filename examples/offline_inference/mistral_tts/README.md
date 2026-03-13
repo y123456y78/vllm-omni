@@ -28,14 +28,14 @@ python3 examples/offline_inference/mistral_tts/end2end.py \
     --text "This is a test message." \
     --audio-path path/to/reference_audio.wav
 
-# Streaming with female voice preset
+# Streaming with neutral_female voice preset
 python3 examples/offline_inference/mistral_tts/end2end.py \
-    --streaming --write-audio --voice female \
+    --streaming --write-audio --voice neutral_female \
     --model mistralai/tts-model
 
-# 32 prompts, 8 concurrent requests per wave, streaming with male voice
+# 32 prompts, 8 concurrent requests per wave, streaming with casual_male voice
 python3 examples/offline_inference/mistral_tts/end2end.py \
-    --num-prompts 32 --concurrency 8 --streaming --write-audio --voice male \
+    --num-prompts 32 --concurrency 8 --streaming --write-audio --voice casual_male \
     --model mistralai/tts-model
 ```
 
@@ -52,7 +52,7 @@ python3 examples/offline_inference/mistral_tts/end2end.py \
 | `--num-prompts N` | Number of replicate prompts to run for measuring performance (default: 1) |
 | `--streaming` | Use streaming generation via `AsyncOmni` (default: blocking `Omni`) |
 | `--concurrency N` | Max concurrent requests per wave (must be used with `--streaming`, must evenly divide `--num-prompts`) |
-| `--voice {female,male}` | Voice preset to use instead of reference audio file |
+| `--voice NAME` | Voice preset to use instead of reference audio file (e.g., casual_female, casual_male, cheerful_female, neutral_female, neutral_male) |
 | `--write-audio` | Write generated audio to WAV files |
 | `--profiling-mode` | Enable profiling mode (reduces max tokens to 50) |
 | `--log-stats` | Enable detailed statistics logging |
