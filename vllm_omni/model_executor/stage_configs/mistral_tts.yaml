@@ -9,6 +9,7 @@ stage_args:
     engine_args:
       model_stage: audio_generation
       model_arch: MistralTTSForConditionalGeneration
+      worker_type: ar
       worker_cls: vllm_omni.worker.gpu_ar_worker.GPUARWorker
       scheduler_cls: vllm_omni.core.sched.omni_ar_scheduler.OmniARScheduler
       gpu_memory_utilization: 0.8
@@ -24,6 +25,8 @@ stage_args:
       enable_chunked_prefill: false
       max_model_len: 32768
       custom_process_next_stage_input_func: vllm_omni.model_executor.stage_input_processors.mistral_tts.generator2tokenizer_async_chunk
+    output_connectors:
+      to_stage_1: connector_of_shared_memory
     is_comprehension: true
     final_output: false
     final_output_type: text
@@ -44,6 +47,7 @@ stage_args:
     engine_args:
       model_stage: audio_tokenizer
       model_arch: MistralTTSForConditionalGeneration
+      worker_type: generation
       worker_cls: vllm_omni.worker.gpu_generation_worker.GPUGenerationWorker
       scheduler_cls: vllm_omni.core.sched.omni_generation_scheduler.OmniGenerationScheduler
       async_scheduling: false
@@ -62,6 +66,8 @@ stage_args:
     is_comprehension: false
     final_output: true
     final_output_type: audio
+    input_connectors:
+      from_stage_0: connector_of_shared_memory
     tts_args:
       max_instructions_length: 500
     default_sampling_params:
