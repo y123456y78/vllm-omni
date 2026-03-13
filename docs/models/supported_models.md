@@ -49,6 +49,7 @@ th {
 |`GlmImageForConditionalGeneration` | GLM-Image | `zai-org/GLM-Image` |
 |`NextStep11Pipeline` | NextStep-1.1 | `stepfun-ai/NextStep-1.1` |
 |`MiMoAudioForConditionalGeneration` | MiMo-Audio-7B-Instruct | `XiaomiMiMo/MiMo-Audio-7B-Instruct` |
+|`MistralTTSForConditionalGeneration` | Mistral TTS | `mistralai/tts-model` |
 
 
 ## List of Supported Models for NPU

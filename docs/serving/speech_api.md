@@ -1,6 +1,6 @@
 # Speech API
 
-vLLM-Omni provides an OpenAI-compatible API for text-to-speech (TTS) generation using Qwen3-TTS models.
+vLLM-Omni provides an OpenAI-compatible API for text-to-speech (TTS) generation using Qwen3-TTS and Mistral TTS models.
 
 Each server instance runs a single model (specified at startup via `vllm serve <model> --omni`).
 
@@ -279,6 +279,25 @@ curl -X POST http://localhost:8091/v1/audio/speech \
     }' --output cloned.wav
 ```
 
+### Mistral TTS (Preset Voice)
+
+```bash
+# Start server with Mistral TTS model first
+vllm serve mistralai/tts-model \
+    --stage-configs-path vllm_omni/model_executor/stage_configs/mistral_tts.yaml \
+    --omni \
+    --port 8091
+```
+
+```bash
+curl -X POST http://localhost:8091/v1/audio/speech \
+    -H "Content-Type: application/json" \
+    -d '{
+        "input": "Hello, how are you?",
+        "voice": "neutral_female"
+    }' --output output.wav
+```
+
 ## Supported Models
 
 | Model | Task Type | Description |
@@ -288,6 +307,7 @@ curl -X POST http://localhost:8091/v1/audio/speech \
 | `Qwen/Qwen3-TTS-12Hz-1.7B-Base` | Base | Voice cloning from reference audio |
 | `Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice` | CustomVoice | Smaller/faster variant |
 | `Qwen/Qwen3-TTS-12Hz-0.6B-Base` | Base | Smaller/faster variant for voice cloning |
+| `mistralai/tts-model` | — | Preset voices (e.g., casual_male, neutral_female) |
 
 ## Error Responses
 
