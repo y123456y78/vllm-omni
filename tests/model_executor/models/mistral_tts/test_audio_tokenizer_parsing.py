@@ -16,6 +16,8 @@ from vllm_omni.model_executor.models.mistral_tts.mistral_tts import (
     parse_batched_audio_input,
 )
 
+pytestmark = [pytest.mark.core_model, pytest.mark.cpu]
+
 NUM_CODEBOOKS = 37
 
 

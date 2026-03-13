@@ -4,9 +4,12 @@
 from collections import defaultdict
 from types import SimpleNamespace
 
+import pytest
 import torch
 
 from vllm_omni.model_executor.stage_input_processors.mistral_tts import generator2tokenizer_async_chunk
+
+pytestmark = [pytest.mark.core_model, pytest.mark.cpu]
 
 
 def _req(external_req_id: str, *, finished: bool):

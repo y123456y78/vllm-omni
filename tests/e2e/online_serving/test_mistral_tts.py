@@ -17,43 +17,18 @@ from pathlib import Path
 import httpx
 import pytest
 
-from tests.conftest import OmniServer
 from tests.utils import hardware_test
 
 MODEL = "mistralai/tts-model"
-
-
-def get_stage_config():
-    """Get the stage config path for Mistral TTS."""
-    return str(
-        Path(__file__).parent.parent.parent.parent / "vllm_omni" / "model_executor" / "stage_configs" / "mistral_tts.yaml"
-    )
-
-
-@pytest.fixture(scope="module")
-def omni_server():
-    """Start vLLM-Omni server with Mistral TTS model."""
-    stage_config_path = get_stage_config()
-
-    print(f"Starting OmniServer with model: {MODEL}")
-
-    with OmniServer(
-        MODEL,
-        [
-            "--stage-configs-path",
-            stage_config_path,
-            "--stage-init-timeout",
-            "120",
-            "--trust-remote-code",
-            "--enforce-eager",
-            "--disable-log-stats",
-        ],
-    ) as server:
-        print("OmniServer started successfully")
-        yield server
-        print("OmniServer stopping...")
-
-    print("OmniServer stopped")
+STAGE_CONFIG = str(
+    Path(__file__).parent.parent.parent.parent
+    / "vllm_omni"
+    / "model_executor"
+    / "stage_configs"
+    / "mistral_tts.yaml"
+)
+EXTRA_ARGS = ["--trust-remote-code", "--enforce-eager", "--disable-log-stats"]
+TEST_PARAMS = [(MODEL, STAGE_CONFIG, EXTRA_ARGS)]
 
 
 def make_speech_request(
@@ -69,7 +44,6 @@ def make_speech_request(
     payload = {
         "input": text,
         "voice": voice,
-        "task_type": "CustomVoice",
         "language": language,
     }
 
@@ -89,7 +63,8 @@ def verify_wav_audio(content: bytes) -> bool:
 MIN_AUDIO_BYTES = 10000
 
 
-class TestMistralTTSCustomVoice:
+@pytest.mark.parametrize("omni_server", TEST_PARAMS, indirect=True)
+class TestMistralTTSFixedVoice:
     """E2E tests for Mistral TTS model."""
 
     @pytest.mark.core_model
@@ -112,7 +87,7 @@ class TestMistralTTSCustomVoice:
             f"Audio content too small ({len(response.content)} bytes), expected at least {MIN_AUDIO_BYTES} bytes"
         )
 
-    @pytest.mark.core_model
+    @pytest.mark.advanced_model
     @pytest.mark.omni
     @hardware_test(res={"cuda": "H100"}, num_cards=1)
     def test_speech_different_voices(self, omni_server) -> None:
@@ -130,7 +105,7 @@ class TestMistralTTSCustomVoice:
             assert response.status_code == 200, f"Request failed for voice {voice}: {response.text}"
             assert verify_wav_audio(response.content), f"Invalid WAV for voice {voice}"
 
-    @pytest.mark.core_model
+    @pytest.mark.advanced_model
     @pytest.mark.omni
     @hardware_test(res={"cuda": "H100"}, num_cards=1)
     def test_speech_invalid_voice_rejected(self, omni_server) -> None:
@@ -151,7 +126,7 @@ class TestMistralTTSCustomVoice:
         )
         assert not verify_wav_audio(response.content), "Should not return valid audio for invalid voice"
 
-    @pytest.mark.core_model
+    @pytest.mark.advanced_model
     @pytest.mark.omni
     @hardware_test(res={"cuda": "H100"}, num_cards=1)
     def test_speech_binary_response_not_utf8_error(self, omni_server) -> None:
@@ -185,10 +160,11 @@ class TestMistralTTSCustomVoice:
         assert verify_wav_audio(response.content), "Response is not valid WAV audio"
 
 
+@pytest.mark.parametrize("omni_server", TEST_PARAMS, indirect=True)
 class TestMistralTTSAPIEndpoints:
     """Test API endpoint functionality."""
 
-    @pytest.mark.core_model
+    @pytest.mark.advanced_model
     @pytest.mark.omni
     @hardware_test(res={"cuda": "H100"}, num_cards=1)
     def test_list_voices_endpoint(self, omni_server) -> None:
@@ -204,7 +180,7 @@ class TestMistralTTSAPIEndpoints:
         assert isinstance(data["voices"], list)
         assert len(data["voices"]) > 0
 
-    @pytest.mark.core_model
+    @pytest.mark.advanced_model
     @pytest.mark.omni
     @hardware_test(res={"cuda": "H100"}, num_cards=1)
     def test_models_endpoint(self, omni_server) -> None:

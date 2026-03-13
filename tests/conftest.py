@@ -1056,9 +1056,18 @@ def omni_server(request, run_level):
     """Start vLLM-Omni server as a subprocess with actual model weights.
     Uses session scope so the server starts only once for the entire test session.
     Multi-stage initialization can take 10-20+ minutes.
+
+    Param format: ``(*port, model, stage_config_path)`` or
+    ``(*port, model, stage_config_path, extra_args)`` where *extra_args* is a
+    list of additional CLI flags (e.g. ``["--trust-remote-code"]``).
     """
     with _omni_server_lock:
-        *port, model, stage_config_path = request.param
+        params = list(request.param)
+        # If the last element is a list, treat it as extra CLI args.
+        extra_args: list[str] = []
+        if params and isinstance(params[-1], list):
+            extra_args = params.pop()
+        *port, model, stage_config_path = params
         port = port[0] if port else None
         if run_level == "advanced_model":
             stage_config_path = modify_stage_config(
@@ -1072,7 +1081,7 @@ def omni_server(request, run_level):
                 },
             )
 
-        server_args = ["--stage-configs-path", stage_config_path, "--stage-init-timeout", "120"]
+        server_args = ["--stage-configs-path", stage_config_path, "--stage-init-timeout", "120"] + extra_args
         with OmniServer(model, server_args, port=port) if port else OmniServer(model, server_args) as server:
             print("OmniServer started successfully")
             yield server
