@@ -52,7 +52,7 @@ class MistralTTSConfigParser(MistralConfigParser):
                 "sampling_rate": encoder_args["audio_encoding_args"]["sampling_rate"],
                 "codec_args": audio_tokenizer_args,
                 "audio_model_args": encoder_args,
-                "speaker_id": audio_tokenizer_args.get("voice", []),
+                "speaker_id": audio_tokenizer_args.get("voice", {}),
             }
         return audio_config
 
