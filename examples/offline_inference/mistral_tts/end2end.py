@@ -5,7 +5,6 @@ This example shows how to use vLLM for running Mistral TTS
 import asyncio
 import gc
 import logging
-import math
 import os
 import time
 import uuid
@@ -22,26 +21,19 @@ from mistral_common.tokens.tokenizers.tekken import Tekkenizer
 try:
     from mistral_common.protocol.speech.request import SpeechRequest
     from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
-
-    HAS_MISTRAL_SPEECH_REQUEST = True
 except ImportError:
-    HAS_MISTRAL_SPEECH_REQUEST = False
+    raise ImportError(
+        "Could not import SpeechRequest or MistralTokenizer from mistral_common. "
+        "Please pull the latest mistral-common code and install it with: "
+        "pip install -e ."
+    )
 from vllm import SamplingParams
 from vllm.utils.argparse_utils import FlexibleArgumentParser
 
 from vllm_omni import AsyncOmni
 from vllm_omni.entrypoints.omni import Omni
-from vllm_omni.model_executor.models.mistral_tts.mistral_tts_audio_generation import SpecialTokens
 
 logger = logging.getLogger(__name__)
-
-VOICE_NUM_AUDIOS = {
-    "casual_female": 2259,
-    "casual_male": 2249,
-    "cheerful_female":132,
-    "neutral_female": 2340,
-    "neutral_male": 169
-}
 
 
 # ---- Streaming version ----
@@ -308,8 +300,7 @@ def parse_args() -> Namespace:
         "--voice",
         type=str,
         default=None,
-        choices=list(VOICE_NUM_AUDIOS.keys()),
-        help="Voice to use instead of audio file. Support: [female, male].",
+        help="Voice to use instead of audio file.",
     )
     return parser.parse_args()
 
@@ -323,55 +314,25 @@ def compose_request(
 ) -> dict:
     """Build the full TTS input dict (prompt_token_ids, multi_modal_data or additional_information)."""
     inputs: dict[str, Any] = {}
+    mistral_tokenizer = MistralTokenizer.from_file(tokenizer_path)
+    instruct_tokenizer = mistral_tokenizer.instruct_tokenizer
 
-    if args.voice is None:
-        with open(audio_prompt_file, "rb") as f:
-            audio_bytes = f.read()
-        audio = Audio.from_bytes(audio_bytes)
-        audio.resample(24_000)
-        print(f"Using {audio_prompt_file=} audio duration={audio.duration}")
-        num_audio_tokens = math.ceil((len(audio.audio_array) / 24000) * 12.5) + 1  # +1 for eoa
-        inputs["multi_modal_data"] = {"audio": [(audio.audio_array, audio.sampling_rate)]}
-    else:
-        num_audio_tokens = VOICE_NUM_AUDIOS[args.voice]
+    if args.voice is not None:
+        tokenized = instruct_tokenizer.encode_speech_request(
+            SpeechRequest(input=text_chunk.text, voice=args.voice)
+        )
         inputs["additional_information"] = {"voice": [args.voice]}
-
-    if HAS_MISTRAL_SPEECH_REQUEST:
-        mistral_tokenizer = MistralTokenizer.from_file(tokenizer_path)
-        instruct_tokenizer = mistral_tokenizer.instruct_tokenizer
-
-        if args.voice is not None:
-            prompt_ids = instruct_tokenizer.encode_speech_request(
-                SpeechRequest(input=text_chunk.text, voice=args.voice)
-            ).tokens
-        else:
-            with open(audio_prompt_file, "rb") as f:
-                ref_audio_bytes = f.read()
-            prompt_ids = instruct_tokenizer.encode_speech_request(
-                SpeechRequest(input=text_chunk.text, ref_audio=ref_audio_bytes)
-            ).tokens
+        inputs["prompt_token_ids"] = tokenized.tokens
     else:
-        # Fallback: manually construct token sequence
-        # NOTE: for TTS the semantic of text_to_audio & audio_to_text is reversed
-        # (currently named under ASR logic)
-        next_audio_text_tok = tokenizer.get_special_token(SpecialTokens.text_to_audio)
-        repeat_audio_text_tok = tokenizer.get_special_token(SpecialTokens.audio_to_text)
-        audio_tok = tokenizer.get_special_token(SpecialTokens.audio)
-        beg_audio = tokenizer.get_special_token(SpecialTokens.begin_audio)
+        with open(audio_prompt_file, "rb") as f:
+            ref_audio_bytes = f.read()
+        tokenized = instruct_tokenizer.encode_speech_request(
+            SpeechRequest(input=text_chunk.text, ref_audio=ref_audio_bytes)
+        )
+        audio = tokenized.audios[0]
+        inputs["multi_modal_data"] = {"audio": [(audio.audio_array, audio.sampling_rate)]}
+        inputs["prompt_token_ids"] = tokenized.tokens
 
-        text_tokens = tokenizer.encode(text_chunk.text, bos=False, eos=False)
-        prompt_ids = [
-            tokenizer.bos_id,
-            beg_audio,
-            *([audio_tok] * num_audio_tokens),
-            next_audio_text_tok,
-            *text_tokens,
-            repeat_audio_text_tok,
-            beg_audio,
-        ]
-
-    inputs["prompt_token_ids"] = prompt_ids
-    print(f"Prompt token count: {len(prompt_ids)}, audio tokens: {num_audio_tokens}")
     return inputs
 
 
