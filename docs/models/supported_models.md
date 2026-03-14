@@ -54,6 +54,7 @@ th {
 |`DreamIDOmniPipeline`| DreamID-Omni | `XuGuo699/DreamID-Omni` |
 |`MistralTTSForConditionalGeneration` | Mistral TTS | `mistralai/tts-model` |
 
+
 ## List of Supported Models for NPU
 
 <style>
