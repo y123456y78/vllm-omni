@@ -17,6 +17,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from tests.conftest import OmniServerParams
 from tests.utils import hardware_test
 
 MODEL = "mistralai/tts-model"
@@ -28,7 +29,7 @@ STAGE_CONFIG = str(
     / "mistral_tts.yaml"
 )
 EXTRA_ARGS = ["--trust-remote-code", "--enforce-eager", "--disable-log-stats"]
-TEST_PARAMS = [(MODEL, STAGE_CONFIG, EXTRA_ARGS)]
+TEST_PARAMS = [OmniServerParams(model=MODEL, stage_config_path=STAGE_CONFIG, server_args=EXTRA_ARGS)]
 
 
 def make_speech_request(

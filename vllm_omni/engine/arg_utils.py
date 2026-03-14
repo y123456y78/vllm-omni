@@ -78,7 +78,7 @@ class OmniEngineArgs(EngineArgs):
 
     stage_id: int = 0
     model_stage: str = "thinker"
-    model_arch: str = "Qwen2_5OmniForConditionalGeneration"
+    model_arch: str | None = None
     engine_output_type: str | None = None
     hf_config_name: str | None = None
     custom_process_next_stage_input_func: str | None = None
@@ -240,7 +240,7 @@ class AsyncOmniEngineArgs(AsyncEngineArgs):
 
     stage_id: int = 0
     model_stage: str = "thinker"
-    model_arch: str = "Qwen2_5OmniForConditionalGeneration"
+    model_arch: str | None = None
     engine_output_type: str | None = None
     hf_config_name: str | None = None
     custom_process_next_stage_input_func: str | None = None

@@ -132,6 +132,16 @@ _DIFFUSION_MODELS = {
         "pipeline_helios",
         "HeliosPipeline",
     ),
+    "Flux2Pipeline": (
+        "flux2",
+        "pipeline_flux2",
+        "Flux2Pipeline",
+    ),
+    "DreamIDOmniPipeline": (
+        "dreamid_omni",
+        "pipeline_dreamid_omni",
+        "DreamIDOmniPipeline",
+    ),
 }
 
 
@@ -191,9 +201,9 @@ def initialize_model(
             od_config.vae_use_tiling = True
 
         # Configure VAE memory optimization settings from config
-        if hasattr(model.vae, "use_slicing"):
+        if hasattr(model, "vae") and hasattr(model.vae, "use_slicing"):
             model.vae.use_slicing = od_config.vae_use_slicing
-        if hasattr(model.vae, "use_tiling"):
+        if hasattr(model, "vae") and hasattr(model.vae, "use_tiling"):
             model.vae.use_tiling = od_config.vae_use_tiling
 
         if is_distributed_vae:
@@ -305,6 +315,7 @@ _DIFFUSION_POST_PROCESS_FUNCS = {
     "OmniGen2Pipeline": "get_omnigen2_post_process_func",
     "HeliosPipeline": "get_helios_post_process_func",
     "HeliosPyramidPipeline": "get_helios_post_process_func",
+    "Flux2Pipeline": "get_flux2_post_process_func",
 }
 
 _DIFFUSION_PRE_PROCESS_FUNCS = {
