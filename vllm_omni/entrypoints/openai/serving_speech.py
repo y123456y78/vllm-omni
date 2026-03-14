@@ -32,7 +32,8 @@ logger = init_logger(__name__)
 # TTS Configuration
 _MISTRAL_TTS_MODEL_STAGES = {"audio_generation"}
 _QWEN3_TTS_MODEL_STAGES = {"qwen3_tts"}
-_TTS_MODEL_STAGES: set[str] = _MISTRAL_TTS_MODEL_STAGES | _QWEN3_TTS_MODEL_STAGES | {"fish_speech_slow_ar"}
+_FISH_TTS_MODEL_STAGES = {"fish_speech_slow_ar"}
+_TTS_MODEL_STAGES: set[str] = _MISTRAL_TTS_MODEL_STAGES | _QWEN3_TTS_MODEL_STAGES | _FISH_TTS_MODEL_STAGES
 _TTS_LANGUAGES: set[str] = {
     "Auto",
     "Chinese",
@@ -220,6 +221,8 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
             return "qwen3_tts"
         if model_stage in _MISTRAL_TTS_MODEL_STAGES:
             return "mistral_tts"
+        if model_stage in _FISH_TTS_MODEL_STAGES:
+            return "fish_tts"
         return None
 
     def _compute_max_instructions_length(self) -> int:
@@ -983,15 +986,14 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
             prompt = {"prompt": request.input}
 
         request_id = f"speech-{random_uuid()}"
-        model_type = (
-            "fish_speech"
-            if self._is_fish_speech
-            else tts_params.get("task_type", ["unknown"])[0]
-            if self._is_tts and tts_params
-            else "mistral_tts"
-            if self._tts_model_type == "mistral_tts"
-            else "generic"
-        )
+        if self._is_fish_speech:
+            model_type = "fish_speech"
+        elif self._tts_model_type == "mistral_tts":
+            model_type = "mistral_tts"
+        elif self._is_tts:
+            model_type = tts_params.get("task_type", ["unknown"])[0]
+        else:
+            model_type = "generic"
         logger.info(
             "TTS speech request %s: text=%r, model=%s",
             request_id,
