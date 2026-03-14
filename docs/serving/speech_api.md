@@ -33,6 +33,7 @@ vllm-omni serve fishaudio/s2-pro \
 # Mistral TTS
 vllm serve mistralai/tts-model \
     --stage-configs-path vllm_omni/model_executor/stage_configs/mistral_tts.yaml \
+    --omni \
     --port 8091 \
     --trust-remote-code \
     --enforce-eager
