@@ -15,7 +15,6 @@ import numpy as np
 import soundfile as sf
 import torch
 from mistral_common.protocol.instruct.chunk import TextChunk
-from mistral_common.tokens.tokenizers.tekken import Tekkenizer
 
 try:
     from mistral_common.protocol.speech.request import SpeechRequest
