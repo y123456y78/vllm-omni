@@ -654,13 +654,10 @@ class MistralTTSProcessorAdapter:
         super().__init__()
         self.tokenizer = tokenizer
 
-    # TODO check what are needed for TTS
     @cached_property
     def _audio_processor(self) -> AudioEncoder:
         audio_encoder = self.tokenizer.instruct.audio_encoder
         assert isinstance(audio_encoder, AudioEncoder)
-        # TODO(@alexhliu): how to set sr properly
-        audio_encoder.audio_config.sampling_rate = 24000
         return audio_encoder
 
     @cached_property
