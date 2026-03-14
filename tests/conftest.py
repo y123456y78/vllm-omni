@@ -1227,10 +1227,8 @@ _omni_server_lock = threading.Lock()
 @pytest.fixture(scope="module")
 def omni_server(request: pytest.FixtureRequest, run_level: str, model_prefix: str) -> Generator[OmniServer, Any, None]:
     """Start vLLM-Omni server as a subprocess with actual model weights.
-    Uses module scope so the server starts once per test module.
+    Uses session scope so the server starts only once for the entire test session.
     Multi-stage initialization can take 10-20+ minutes.
-
-    Param format: ``OmniServerParams(model, port, stage_config_path, server_args)``.
     """
     with _omni_server_lock:
         params: OmniServerParams = request.param
