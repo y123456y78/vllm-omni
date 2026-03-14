@@ -43,9 +43,7 @@ class CUDAGraphAcousticTransformerWrapper:
         # Pre-compute constants from the acoustic transformer
         self.empty_audio_token_id = AudioSpecialTokens.id(AudioSpecialTokens.empty_audio)
         self.end_audio_token_id = AudioSpecialTokens.id(AudioSpecialTokens.end_audio)
-        self.semantic_mask_start = (
-            len(AudioSpecialTokens) + self.acoustic_transformer.model_args.semantic_codebook_size
-        )
+        self.semantic_mask_start = len(AudioSpecialTokens) + self.acoustic_transformer.model_args.semantic_codebook_size
         self.n_acoustic_codebook = self.acoustic_transformer.model_args.n_acoustic_codebook
         self.acoustic_embeddings_levels = self.acoustic_transformer.acoustic_embeddings_levels
 

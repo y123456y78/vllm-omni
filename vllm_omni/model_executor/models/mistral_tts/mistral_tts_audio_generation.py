@@ -97,6 +97,7 @@ class AudioSpecialTokens(str, Enum):
     def id(token: "AudioSpecialTokens") -> int:
         return AudioSpecialTokens.all_special_tokens().index(token)
 
+
 @dataclass
 class AcousticTransformerArgs:
     input_dim: int
