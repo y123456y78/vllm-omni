@@ -437,6 +437,9 @@ class FlowMatchingAudioTransformer(nn.Module):
 
         self.sampler = Sampler(logprobs_mode="raw_logprobs")
 
+        self._end_audio_token_id = AudioSpecialTokens.id(AudioSpecialTokens.end_audio)
+        self._empty_audio_token_id = AudioSpecialTokens.id(AudioSpecialTokens.empty_audio)
+
     def load_weight(self, weight: tuple[str, torch.Tensor]) -> str:
         params_dict = dict(self.named_parameters())
         name, loaded_weight = weight
@@ -511,8 +514,8 @@ class FlowMatchingAudioTransformer(nn.Module):
         B = semantic_code.shape[0]
 
         # Skip decoding if codebook 0 is [END_AUDIO] token.
-        end_audio_token_id = AudioSpecialTokens.id(AudioSpecialTokens.end_audio)
-        empty_audio_token_id = AudioSpecialTokens.id(AudioSpecialTokens.empty_audio)
+        end_audio_token_id = self._end_audio_token_id
+        empty_audio_token_id = self._empty_audio_token_id
         should_decode = semantic_code != end_audio_token_id
 
         # acoustic_codes starts from x_0
@@ -587,7 +590,7 @@ class FlowMatchingAudioTransformer(nn.Module):
     ) -> torch.Tensor:
         # llm_hidden: BxD
         semantic_logit = self.semantic_codebook_output(llm_hidden).float()
-        semantic_logit[:, empty_audio_token_id] = -float("inf")  # 1 = eoa is allowed
+        semantic_logit[:, self._empty_audio_token_id] = -float("inf")  # 1 = eoa is allowed
         semantic_logit[:, (len(AudioSpecialTokens) + self.model_args.semantic_codebook_size) :] = -float("inf")
 
         sampling_metadata = self._create_sampling_metadata(semantic_logit)
@@ -614,7 +617,9 @@ class FlowMatchingAudioTransformer(nn.Module):
         cb0_logit: torch.Tensor,
     ) -> SamplingMetadata:
         batch_size = cb0_logit.shape[0]
-        full = lambda v: torch.full((batch_size,), v, device=cb0_logit.device)
+
+        def full(v):
+            return torch.full((batch_size,), v, device=cb0_logit.device)
 
         return SamplingMetadata(
             temperature=full(1.0),
@@ -803,14 +808,9 @@ class MistralTTSDummyInputsBuilder(BaseDummyInputsBuilder[MistralTTSProcessingIn
         mm_options: Mapping[str, Any] | None = None,
     ) -> MultiModalDataDict:
         num_audios = mm_counts.get("audio", 0)
-
-        target_length = self.info.get_max_audio_array_len()
-
+        length = self.info.get_max_audio_array_len()
         audio_overrides = mm_options.get("audio") if mm_options else None
-        # overrides not support in vllm v0.11.0
-        # return {"audio": self._get_dummy_audios(length=target_length, num_audios=num_audios, overrides=audio_overrides)}
-        res = {"audio": self._get_dummy_audios(length=target_length, num_audios=num_audios)}
-        return res
+        return {"audio": self._get_dummy_audios(length=length, num_audios=num_audios, overrides=audio_overrides)}
 
     def get_dummy_processor_inputs(
         self,
@@ -883,7 +883,7 @@ class MistralTTSMultiModalProcessor(BaseMultiModalProcessor[MistralTTSProcessing
         audio_id = processor.audio_token_id
 
         def get_replacement(item_idx: int):
-            audios = mm_items.get_items("audio", Union[AudioProcessorItems])
+            audios = mm_items.get_items("audio", AudioProcessorItems)
             if isinstance(audios, AudioProcessorItems):
                 audio_len = audios.get_audio_length(item_idx)
                 audio_token_len = processor.get_num_audio_tokens(audio_len)

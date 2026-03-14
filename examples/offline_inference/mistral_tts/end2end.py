@@ -123,7 +123,7 @@ async def run_streaming(inputs, sampling_params_list, model_name, args, output_d
                         chunk_labels.append("no_wait")
                 accumulated_audio_dur += chunk_durations[i]
 
-        req_wait_count = sum(1 for l in chunk_labels if l == "wait")
+        req_wait_count = sum(1 for chunk_label in chunk_labels if chunk_label == "wait")
         req_wait_rate = req_wait_count / len(chunk_labels) if chunk_labels else 0.0
 
         # Concatenate all chunks for this request's audio
