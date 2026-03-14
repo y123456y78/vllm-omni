@@ -765,7 +765,7 @@ class MistralTTSAudioTokenizer(nn.Module):
 
         self.encoder_blocks = nn.ModuleList(encoder_blocks)
 
-        ### Audio token lookup talbe for LLM
+        ### Audio token lookup table for LLM
         # placed here assuming we will never need to return tokens
         # from encoder to client
         self.audio_token_embedding = MultiVocabEmbeddings(

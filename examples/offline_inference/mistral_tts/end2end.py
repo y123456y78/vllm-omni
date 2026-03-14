@@ -317,9 +317,7 @@ def compose_request(
     instruct_tokenizer = mistral_tokenizer.instruct_tokenizer
 
     if args.voice is not None:
-        tokenized = instruct_tokenizer.encode_speech_request(
-            SpeechRequest(input=text_chunk.text, voice=args.voice)
-        )
+        tokenized = instruct_tokenizer.encode_speech_request(SpeechRequest(input=text_chunk.text, voice=args.voice))
         inputs["additional_information"] = {"voice": [args.voice]}
         inputs["prompt_token_ids"] = tokenized.tokens
     else:

@@ -1019,7 +1019,9 @@ class OmniGPUModelRunner(GPUModelRunner):
                     s, e = start_offset, start_offset + sched_tokens
                     # only consider to store data into update dict.
                     hidden_states_slice = hidden_states[s:e]
-                    update_dict = self.model.postprocess(hidden_states_slice, multimodal_outputs=multimodal_outputs, **req_infos)
+                    update_dict = self.model.postprocess(
+                        hidden_states_slice, multimodal_outputs=multimodal_outputs, **req_infos
+                    )
                     self._update_intermediate_buffer(req_id, update_dict)
         except Exception as e:
             logger.error(

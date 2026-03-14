@@ -1,6 +1,6 @@
+import argparse
 import io
 import json
-import argparse
 import logging
 import socket
 import uuid
@@ -12,7 +12,6 @@ import gradio as gr
 import httpx
 import numpy as np
 import soundfile as sf
-
 
 logger = logging.getLogger()
 
@@ -237,25 +236,15 @@ def main(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Mistral TTS Gradio Demo")
-    parser.add_argument(
-        "--model",
-        type=str,
-        required=True,
-        help="Path to the model checkpoint"
-    )
+    parser.add_argument("--model", type=str, required=True, help="Path to the model checkpoint")
     parser.add_argument(
         "--output-dir",
         type=str,
         default=None,
         help="Directory to save generated audio and share links. "
-             "If not provided, save/share functionality is disabled.",
+        "If not provided, save/share functionality is disabled.",
     )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        default=False,
-        help="Enable debug mode"
-    )
+    parser.add_argument("--debug", action="store_true", default=False, help="Enable debug mode")
 
     args = parser.parse_args()
 

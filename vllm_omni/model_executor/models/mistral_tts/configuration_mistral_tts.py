@@ -82,9 +82,7 @@ class MistralTTSConfigParser(MistralConfigParser):
 
         # Build text_config from the top-level keys
         non_text_keys = {"multimodal"}
-        text_config = {
-            k: v for k, v in config_dict.items() if k not in non_text_keys
-        }
+        text_config = {k: v for k, v in config_dict.items() if k not in non_text_keys}
         text_config = _remap_general_mistral_args(text_config)
         if text_config.get("quantization"):
             text_config = _remap_mistral_quantization_args(text_config)

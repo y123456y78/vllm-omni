@@ -139,11 +139,9 @@ def test_cut_multiple_requests():
     """Each request in the batch gets its own ctx_frames cut."""
     downsample_factor = 100
     audio1 = torch.arange(1000, dtype=torch.float32)  # 10 frames
-    audio2 = torch.arange(500, dtype=torch.float32)   # 5 frames
+    audio2 = torch.arange(500, dtype=torch.float32)  # 5 frames
 
-    result = apply_ctx_frames_cutting(
-        [audio1, audio2], [3, 0], downsample_factor
-    )
+    result = apply_ctx_frames_cutting([audio1, audio2], [3, 0], downsample_factor)
 
     assert len(result) == 2
     assert result[0].shape[0] == 1000 - 3 * 100  # 700

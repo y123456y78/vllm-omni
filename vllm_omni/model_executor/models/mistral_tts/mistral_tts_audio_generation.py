@@ -42,14 +42,13 @@ from vllm.multimodal.inputs import (
     MultiModalDataDict,
     MultiModalFieldConfig,
     MultiModalKwargsItems,
-    MultiModalUUIDDict,
     NestedTensors,
 )
 from vllm.multimodal.parse import AudioProcessorItems, MultiModalDataItems, MultiModalDataParser
 from vllm.multimodal.processing import BaseDummyInputsBuilder, BaseMultiModalProcessor
 from vllm.multimodal.processing.processor import (
-    MultiModalProcessingInfo,
     BaseProcessingInfo,
+    MultiModalProcessingInfo,
     ProcessorInputs,
     PromptReplacement,
     PromptUpdate,
@@ -57,10 +56,10 @@ from vllm.multimodal.processing.processor import (
 )
 from vllm.sequence import IntermediateTensors
 from vllm.tokenizers import cached_tokenizer_from_config
+from vllm.tokenizers.mistral import MistralTokenizer
 from vllm.v1.sample.logits_processor import LogitsProcessors
 from vllm.v1.sample.metadata import SamplingMetadata
 from vllm.v1.sample.sampler import Sampler
-from vllm.tokenizers.mistral import MistralTokenizer
 
 weight_norm = torch.nn.utils.parametrizations.weight_norm
 
@@ -126,7 +125,7 @@ class AcousticTransformerArgs:
 class MultimodalAudioModelArgs:
     # comma-separated list of codebook sizes
     # The first token in a codebook should always be reserved to indicate
-    # absense. The codebook size should be inclusive of this.
+    # absence. The codebook size should be inclusive of this.
     semantic_codebook_size: int
     acoustic_codebook_size: int
     n_acoustic_codebook: int
@@ -650,6 +649,7 @@ class MistralTTSProcessorAdapter:
     """
     Provide a HF-compatible interface
     """
+
     def __init__(self, tokenizer: MistralTokenizer) -> None:
         super().__init__()
         self.tokenizer = tokenizer
@@ -800,9 +800,8 @@ class MistralTTSProcessingInfo(BaseProcessingInfo):
 
     def get_max_audio_array_len(self) -> int:
         processor = self.get_hf_processor()
-        return self.get_max_audio_tokens() * int(
-            processor.sampling_rate // processor.frame_rate
-        )
+        return self.get_max_audio_tokens() * int(processor.sampling_rate // processor.frame_rate)
+
 
 class MistralTTSDummyInputsBuilder(BaseDummyInputsBuilder[MistralTTSProcessingInfo]):
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:

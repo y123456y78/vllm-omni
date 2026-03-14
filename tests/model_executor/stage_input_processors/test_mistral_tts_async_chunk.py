@@ -181,7 +181,7 @@ def test_context_handling_format():
 
     # Feed 5 frames to trigger a chunk (chunk_size_at_begin=5)
     for i in range(5):
-        pooling_output = {"audio": torch.tensor([float(i + 10)] * 2)} # codebook_dim=2
+        pooling_output = {"audio": torch.tensor([float(i + 10)] * 2)}  # codebook_dim=2
         payload = generator2tokenizer_async_chunk(
             transfer_manager=transfer_manager,
             pooling_output=pooling_output,

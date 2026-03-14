@@ -1,7 +1,7 @@
 """
 CUDA Graph wrapper for AcousticTransformer in MistralTTS.
 
-Currently it support FlowMatching implementaion only.
+Currently it support FlowMatching implementation only.
 
 Captures the AcousticTransformer forward pass (semantic logit +
 n-step Euler ODE with CFG) into CUDA graphs for fixed batch sizes,

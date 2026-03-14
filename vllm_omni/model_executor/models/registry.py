@@ -151,11 +151,7 @@ _OMNI_MODELS = {
         "mistral_tts_audio_generation",
         "MistralTTSAudioGenerationForConditionalGeneration",
     ),
-    "MistralTTSAudioTokenizer": (
-        "mistral_tts",
-        "mistral_tts_audio_tokenizer",
-        "MistralTTSAudioTokenizer"
-    ),
+    "MistralTTSAudioTokenizer": ("mistral_tts", "mistral_tts_audio_tokenizer", "MistralTTSAudioTokenizer"),
 }
 
 

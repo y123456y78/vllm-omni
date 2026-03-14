@@ -22,11 +22,7 @@ from tests.utils import hardware_test
 
 MODEL = "mistralai/tts-model"
 STAGE_CONFIG = str(
-    Path(__file__).parent.parent.parent.parent
-    / "vllm_omni"
-    / "model_executor"
-    / "stage_configs"
-    / "mistral_tts.yaml"
+    Path(__file__).parent.parent.parent.parent / "vllm_omni" / "model_executor" / "stage_configs" / "mistral_tts.yaml"
 )
 EXTRA_ARGS = ["--trust-remote-code", "--enforce-eager", "--disable-log-stats"]
 TEST_PARAMS = [OmniServerParams(model=MODEL, stage_config_path=STAGE_CONFIG, server_args=EXTRA_ARGS)]
@@ -122,9 +118,7 @@ class TestMistralTTSFixedVoice:
         # vLLM returns ErrorResponse as JSON with HTTP 200;
         # verify the body is a JSON error, not valid WAV audio.
         data = response.json()
-        assert "error" in data or "message" in data, (
-            f"Expected error response for invalid voice, got: {data}"
-        )
+        assert "error" in data or "message" in data, f"Expected error response for invalid voice, got: {data}"
         assert not verify_wav_audio(response.content), "Should not return valid audio for invalid voice"
 
     @pytest.mark.advanced_model

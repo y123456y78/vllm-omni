@@ -31,9 +31,7 @@ from vllm_omni.model_executor.models.output_templates import OmniOutput
 logger = init_logger(__name__)
 
 
-def parse_batched_audio_input(
-    input_ids: torch.Tensor, num_codebooks: int = 37
-) -> tuple[list[torch.Tensor], list[int]]:
+def parse_batched_audio_input(input_ids: torch.Tensor, num_codebooks: int) -> tuple[list[torch.Tensor], list[int]]:
     """Parse batched input_ids with [ctx_frames, context_length, ...tokens] format.
 
     Each request in the batch is laid out as:
@@ -136,8 +134,7 @@ class MistralTTSForConditionalGeneration(
                 logger.info("Available voice embeddings: %s", list(self.voice_to_embedding.keys()))
             else:
                 self.voice_to_embedding = {}
-                logger.warning("No speaker_id configured in audio_config."
-                               "No voice embeddings will be available.")
+                logger.warning("No speaker_id configured in audio_config.No voice embeddings will be available.")
         elif self.model_stage == "audio_tokenizer":
             self.requires_raw_input_tokens = True
             self.audio_generation = None
@@ -255,7 +252,8 @@ class MistralTTSForConditionalGeneration(
         if self.model_stage == "audio_tokenizer":
             if (input_ids == 0).all():  # Sample run
                 # TODO(chenyo): Move this to dummy_inputs creation
-                audio_tokens = torch.randint(low=2, high=100, size=(116, 37), dtype=torch.int32)
+                num_codebooks = self.audio_tokenizer.num_codebooks
+                audio_tokens = torch.randint(low=2, high=100, size=(116, num_codebooks), dtype=torch.int32)
                 audio_tokens[-1, :] = 0
                 audio_tokens[-1, 0] = 1
                 batch_audio_arrays = self.audio_tokenizer.decode_helper_batch([audio_tokens])
@@ -263,7 +261,9 @@ class MistralTTSForConditionalGeneration(
                     text_hidden_states=None,
                     multimodal_outputs={"audio": batch_audio_arrays},
                 )
-            all_audio_tokens, all_ctx_frames = parse_batched_audio_input(input_ids, num_codebooks=37)
+            all_audio_tokens, all_ctx_frames = parse_batched_audio_input(
+                input_ids, num_codebooks=self.audio_tokenizer.num_codebooks
+            )
 
             # Batch decode all requests at once
             batch_audio_arrays_raw = self.audio_tokenizer.decode_helper_batch(all_audio_tokens)
