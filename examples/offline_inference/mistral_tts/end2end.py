@@ -305,15 +305,14 @@ def parse_args() -> Namespace:
 
 
 def compose_request(
-    tokenizer: Tekkenizer,
-    tokenizer_path: str,
+    model_name: str,
     text_chunk: TextChunk,
     audio_prompt_file: str,
     args: Any,
 ) -> dict:
     """Build the full TTS input dict (prompt_token_ids, multi_modal_data or additional_information)."""
     inputs: dict[str, Any] = {}
-    mistral_tokenizer = MistralTokenizer.from_file(tokenizer_path)
+    mistral_tokenizer = MistralTokenizer.from_hf_hub(model_name)
     instruct_tokenizer = mistral_tokenizer.instruct_tokenizer
 
     if args.voice is not None:
@@ -337,7 +336,6 @@ def main(args: Any) -> None:
     max_num_tokens = 50 if args.profiling_mode else 2500
 
     model_name = args.model
-    tokenizer_path = args.tokenizer or os.path.join(model_name, "tekken.json")
     output_dir = args.output_dir
 
     if args.voice is None and args.audio_path is None:
@@ -349,9 +347,7 @@ def main(args: Any) -> None:
     if args.write_audio:
         os.makedirs(output_dir, exist_ok=True)
 
-    tokenizer = Tekkenizer.from_file(tokenizer_path)
-
-    inputs = compose_request(tokenizer, tokenizer_path, text_chunk, audio_prompt_file, args)
+    inputs = compose_request(model_name, text_chunk, audio_prompt_file, args)
 
     sampling_params = SamplingParams(
         max_tokens=max_num_tokens,
