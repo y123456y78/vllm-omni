@@ -38,7 +38,6 @@ try:
     )
     from vllm_omni.model_executor.models.mistral_tts.mistral_tts_audio_generation import (
         AudioSpecialTokens,
-        audio_special_tokens,
     )
 except Exception:
     _WRAPPER_PATH = os.path.join(
@@ -76,7 +75,6 @@ except Exception:
     _mod2 = importlib.util.module_from_spec(_spec2)
     _spec2.loader.exec_module(_mod2)
     AudioSpecialTokens = _mod2.AudioSpecialTokens
-    audio_special_tokens = _mod2.audio_special_tokens
 
 
 class SyntheticModelArgs:
@@ -100,7 +98,7 @@ class SyntheticAcousticTransformer(nn.Module):
         self.acoustic_embeddings_levels = ACOUSTIC_EMBEDDINGS_LEVELS
 
         # semantic_codebook_output: hidden_dim -> padded_codebook_size
-        padded_semantic_size = len(audio_special_tokens) + SEMANTIC_CODEBOOK_SIZE
+        padded_semantic_size = len(AudioSpecialTokens) + SEMANTIC_CODEBOOK_SIZE
         # Round up to multiple of 128 like the real model
         padded_semantic_size = 128 * ((padded_semantic_size + 127) // 128)
         self.semantic_codebook_output = nn.Linear(HIDDEN_DIM, padded_semantic_size, bias=False)
@@ -122,7 +120,6 @@ class SyntheticModel(nn.Module):
     def __init__(self):
         super().__init__()
         self.acoustic_transformer = SyntheticAcousticTransformer()
-
         end_audio_id = AudioSpecialTokens.id(AudioSpecialTokens.end_audio)
         empty_audio_id = AudioSpecialTokens.id(AudioSpecialTokens.empty_audio)
         self.end_audio_id = end_audio_id
@@ -139,7 +136,7 @@ class SyntheticModel(nn.Module):
 
         empty_audio_id = self.empty_audio_id
         end_audio_id = self.end_audio_id
-        semantic_mask_start = len(audio_special_tokens) + at.model_args.semantic_codebook_size
+        semantic_mask_start = len(AudioSpecialTokens) + at.model_args.semantic_codebook_size
 
         # Semantic logits
         semantic_logit = at.semantic_codebook_output(hidden_states).float()
@@ -170,7 +167,7 @@ class SyntheticModel(nn.Module):
         scaled_x = ((sampled + 1) / 2) * (at.acoustic_embeddings_levels - 1)
         output_codes = scaled_x.round().long()
         output_codes[~should_decode] = empty_audio_id
-        acoustic_codes = output_codes + 2
+        acoustic_codes = output_codes + len(AudioSpecialTokens)
 
         audio_codes = torch.cat([semantic_code, acoustic_codes], dim=1)
         fake_eos = torch.where(

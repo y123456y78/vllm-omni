@@ -34,12 +34,6 @@ logger = init_logger(__name__)
 
 weight_norm = torch.nn.utils.parametrizations.weight_norm
 
-empty_audio_token_id = AudioSpecialTokens.id(AudioSpecialTokens.empty_audio)
-end_audio_token_id = AudioSpecialTokens.id(AudioSpecialTokens.end_audio)
-audio_special_tokens = [
-    empty_audio_token_id,
-    end_audio_token_id,
-]
 
 CODEC_NORM_EPS = 1e-2
 

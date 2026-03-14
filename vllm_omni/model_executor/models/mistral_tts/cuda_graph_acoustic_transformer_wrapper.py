@@ -14,7 +14,6 @@ from vllm.logger import init_logger
 
 from vllm_omni.model_executor.models.mistral_tts.mistral_tts_audio_generation import (
     AudioSpecialTokens,
-    audio_special_tokens,
 )
 
 logger = init_logger(__name__)
@@ -45,7 +44,7 @@ class CUDAGraphAcousticTransformerWrapper:
         self.empty_audio_token_id = AudioSpecialTokens.id(AudioSpecialTokens.empty_audio)
         self.end_audio_token_id = AudioSpecialTokens.id(AudioSpecialTokens.end_audio)
         self.semantic_mask_start = (
-            len(audio_special_tokens) + self.acoustic_transformer.model_args.semantic_codebook_size
+            len(AudioSpecialTokens) + self.acoustic_transformer.model_args.semantic_codebook_size
         )
         self.n_acoustic_codebook = self.acoustic_transformer.model_args.n_acoustic_codebook
         self.acoustic_embeddings_levels = self.acoustic_transformer.acoustic_embeddings_levels
@@ -166,7 +165,7 @@ class CUDAGraphAcousticTransformerWrapper:
         scaled_x = ((sampled + 1) / 2) * (self.acoustic_embeddings_levels - 1)
         output_codes = scaled_x.round().long()
         output_codes[~should_decode] = self.empty_audio_token_id
-        acoustic_codes = output_codes + 2
+        acoustic_codes = output_codes + len(AudioSpecialTokens)
 
         # --- Combine semantic + acoustic ---
         audio_codes = torch.cat([semantic_code, acoustic_codes], dim=1)  # (B, 1 + n_acoustic)

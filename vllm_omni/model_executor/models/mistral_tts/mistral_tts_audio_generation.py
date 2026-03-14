@@ -97,15 +97,6 @@ class AudioSpecialTokens(str, Enum):
     def id(token: "AudioSpecialTokens") -> int:
         return AudioSpecialTokens.all_special_tokens().index(token)
 
-
-empty_audio_token_id = AudioSpecialTokens.id(AudioSpecialTokens.empty_audio)
-end_audio_token_id = AudioSpecialTokens.id(AudioSpecialTokens.end_audio)
-audio_special_tokens = [
-    empty_audio_token_id,
-    end_audio_token_id,
-]
-
-
 @dataclass
 class AcousticTransformerArgs:
     input_dim: int
@@ -416,7 +407,6 @@ class FlowMatchingAudioTransformer(nn.Module):
                     "n_acoustic_codebook": len(codebook_sizes) - 1,
                 }
             )
-
         self.model_args: MultimodalAudioModelArgs = from_nested_dict(MultimodalAudioModelArgs, audio_model_args)
         # MultimodalAudioModelArgs
         assert isinstance(self.model_args, MultimodalAudioModelArgs)
@@ -561,7 +551,7 @@ class FlowMatchingAudioTransformer(nn.Module):
         scaled_x = ((sampled + 1) / 2) * (self.acoustic_embeddings_levels - 1)  # scale to 0 ~ max level
         output_codes = scaled_x.round().long()
         output_codes[~should_decode] = empty_audio_token_id
-        return output_codes + len(audio_special_tokens)
+        return output_codes + len(AudioSpecialTokens)
 
     def _predict_velocity(
         self,
@@ -597,7 +587,7 @@ class FlowMatchingAudioTransformer(nn.Module):
         # llm_hidden: BxD
         semantic_logit = self.semantic_codebook_output(llm_hidden).float()
         semantic_logit[:, empty_audio_token_id] = -float("inf")  # 1 = eoa is allowed
-        semantic_logit[:, (len(audio_special_tokens) + self.model_args.semantic_codebook_size) :] = -float("inf")
+        semantic_logit[:, (len(AudioSpecialTokens) + self.model_args.semantic_codebook_size) :] = -float("inf")
 
         sampling_metadata = self._create_sampling_metadata(semantic_logit)
 
