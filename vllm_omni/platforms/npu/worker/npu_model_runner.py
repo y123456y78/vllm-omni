@@ -418,4 +418,4 @@ class OmniNPUModelRunner(OmniGPUModelRunner, NPUModelRunner):
             start_offset = int(self.query_start_loc.cpu[req_index])
             inputs_embeds[start_offset : start_offset + 1] = req_embeds[idx : idx + 1]
             update_dict = {out_key: code_predictor_codes_cpu[idx : idx + 1]}
-            self._update_intermediate_buffer(req_id, update_dict)
+            self._merge_additional_information_update(req_id, update_dict)

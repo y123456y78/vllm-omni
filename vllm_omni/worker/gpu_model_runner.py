@@ -1258,7 +1258,7 @@ class OmniGPUModelRunner(GPUModelRunner):
                     decode_req_ids.append(req_id)
 
                 # TODO(Peiqi): the merge stage could move out from the critical path
-                self._update_intermediate_buffer(req_id, update_dict)
+                self._merge_additional_information_update(req_id, update_dict)
 
                 # update the inputs_embeds and input_ids
                 seg_len = min(span_len, req_embeds.shape[0])
@@ -1310,7 +1310,7 @@ class OmniGPUModelRunner(GPUModelRunner):
             start_offset = int(self.query_start_loc.cpu[req_index])
             inputs_embeds[start_offset : start_offset + 1] = req_embeds[idx : idx + 1]
             update_dict = {out_key: code_predictor_codes_cpu[idx : idx + 1]}
-            self._update_intermediate_buffer(req_id, update_dict)
+            self._merge_additional_information_update(req_id, update_dict)
 
     def _model_forward(
         self,
