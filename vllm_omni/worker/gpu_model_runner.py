@@ -100,6 +100,8 @@ class OmniGPUModelRunner(GPUModelRunner):
             self.last_talker_hidden = self._make_buffer(max_batch_size, hidden_size, dtype=self.dtype, numpy=False)
             self.text_step = self._make_buffer(max_batch_size, hidden_size, dtype=self.dtype, numpy=False)
 
+        self._gpu_resident_buffer_keys: set[str] = getattr(self.model, "gpu_resident_buffer_keys", set())
+
     def _init_mrope_positions(self, req_state: CachedRequestState):
         """Initialize M-RoPE positions for multimodal inputs.
 
@@ -1343,10 +1345,7 @@ class OmniGPUModelRunner(GPUModelRunner):
         req_state = self.requests.get(req_id)
         if req_state is None:
             return
-        # Check if the model declares keys that should stay on GPU
-        gpu_keys: set[str] = set()
-        if hasattr(self, "model") and hasattr(self.model, "gpu_resident_buffer_keys"):
-            gpu_keys = self.model.gpu_resident_buffer_keys
+        gpu_keys = self._gpu_resident_buffer_keys
         existing = self.model_intermediate_buffer.setdefault(req_id, {})
         for k, v in upd.items():
             if isinstance(v, torch.Tensor):
