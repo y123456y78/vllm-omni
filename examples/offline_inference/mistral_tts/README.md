@@ -43,8 +43,7 @@ python3 examples/offline_inference/mistral_tts/end2end.py \
 
 | Argument | Description |
 |---|---|
-| `--model PATH` | Model name or path (default: `mistralai/tts-model`) |
-| `--tokenizer PATH` | Tokenizer path (default: `<model>/tekken.json`) |
+| `--model PATH` | HuggingFace repo ID or local directory path (default: `mistralai/tts-model`) |
 | `--text TEXT` | Text to synthesize (default: `"This is a test message."`) |
 | `--audio-path PATH` | Path to reference audio file for voice cloning |
 | `--output-dir DIR` | Directory to write output WAV files (default: `output_audio`) |

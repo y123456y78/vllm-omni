@@ -9,6 +9,7 @@ import os
 import time
 import uuid
 from argparse import Namespace
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -232,12 +233,6 @@ def parse_args() -> Namespace:
         help="Model name or path.",
     )
     parser.add_argument(
-        "--tokenizer",
-        type=str,
-        default=None,
-        help="Tokenizer path. Defaults to <model>/tekken.json.",
-    )
-    parser.add_argument(
         "--text",
         type=str,
         default="This is a test message.",
@@ -311,7 +306,10 @@ def compose_request(
 ) -> dict:
     """Build the full TTS input dict (prompt_token_ids, multi_modal_data or additional_information)."""
     inputs: dict[str, Any] = {}
-    mistral_tokenizer = MistralTokenizer.from_hf_hub(model_name)
+    if Path(model_name).is_dir():
+        mistral_tokenizer = MistralTokenizer.from_file(str(Path(model_name) / "tekken.json"))
+    else:
+        mistral_tokenizer = MistralTokenizer.from_hf_hub(model_name)
     instruct_tokenizer = mistral_tokenizer.instruct_tokenizer
 
     if args.voice is not None:
