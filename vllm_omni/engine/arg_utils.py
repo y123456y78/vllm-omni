@@ -1,3 +1,5 @@
+import argparse
+import dataclasses
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -93,6 +95,12 @@ class OmniEngineArgs(EngineArgs):
         load_omni_general_plugins()
         super().__post_init__()
 
+    @classmethod
+    def from_cli_args(cls, args: argparse.Namespace) -> "OmniEngineArgs":
+        attrs = [attr.name for attr in dataclasses.fields(cls)]
+        engine_args = cls(**{attr: getattr(args, attr) for attr in attrs if hasattr(args, attr)})
+        return engine_args
+
     def _ensure_omni_models_registered(self):
         if hasattr(self, "_omni_models_registered"):
             return True
@@ -122,8 +130,8 @@ class OmniEngineArgs(EngineArgs):
         self._ensure_omni_models_registered()
 
         # Keep compatibility when async args are constructed from partial payloads.
-        limit_mm_per_prompt = getattr(self, "limit_mm_per_prompt", {})
         language_model_only = getattr(self, "language_model_only", False)
+        limit_mm_per_prompt = getattr(self, "limit_mm_per_prompt", {})
         enable_mm_embeds = getattr(self, "enable_mm_embeds", False)
         interleave_mm_strings = getattr(self, "interleave_mm_strings", False)
         media_io_kwargs = getattr(self, "media_io_kwargs", {})
@@ -284,8 +292,8 @@ class AsyncOmniEngineArgs(AsyncEngineArgs):
         self._ensure_omni_models_registered()
 
         # Keep compatibility when async args are constructed from partial payloads.
-        limit_mm_per_prompt = getattr(self, "limit_mm_per_prompt", {})
         language_model_only = getattr(self, "language_model_only", False)
+        limit_mm_per_prompt = getattr(self, "limit_mm_per_prompt", {})
         enable_mm_embeds = getattr(self, "enable_mm_embeds", False)
         interleave_mm_strings = getattr(self, "interleave_mm_strings", False)
         media_io_kwargs = getattr(self, "media_io_kwargs", {})
