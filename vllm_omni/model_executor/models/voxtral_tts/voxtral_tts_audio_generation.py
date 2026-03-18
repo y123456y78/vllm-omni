@@ -524,31 +524,29 @@ class FlowMatchingAudioTransformer(nn.Module):
 
         # schedule time steps
         timesteps = torch.linspace(0, 1, acoustic_decode_iters, device=x_0.device, dtype=llm_hidden.dtype)
+        cfg_alpha = 1.2  # TODO(chenyo): hardcoded, need to fix
+        llm_hidden_zero = torch.zeros_like(llm_hidden)
 
-        def fn(t: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-            t_emb = self.time_embedding(t.view(-1, 1).repeat(x.shape[0], 1)).to(llm_hidden.dtype)
-            v_t = self._predict_velocity(
-                x_t=x,
-                llm_output=llm_hidden,
-                t_emb=t_emb,
-            )
-            cfg_alpha = 1.2  # TODO(chenyo): hardcoded, need to fix
-            uncond_v_t = self._predict_velocity(
-                x_t=x,
-                llm_output=llm_hidden * 0,
-                t_emb=t_emb,
-            )
-            v_t = cfg_alpha * v_t + (1 - cfg_alpha) * uncond_v_t
-
-            return v_t
-
-        # NEW: manual Euler as it's most efficient
+        # Euler integration with batched conditional + unconditional velocity
         sampled = x_0
         for i in range(len(timesteps) - 1):
             t = timesteps[i]
             dt = timesteps[i + 1] - timesteps[i]
-            dx = fn(t, sampled) * dt
-            sampled = sampled + dx
+
+            t_emb = self.time_embedding(t.view(-1, 1).repeat(B, 1)).to(llm_hidden.dtype)
+
+            # Batch cond + uncond into a single forward pass (2B batch)
+            x_batched = torch.cat([sampled, sampled], dim=0)
+            llm_batched = torch.cat([llm_hidden, llm_hidden_zero], dim=0)
+            t_emb_batched = torch.cat([t_emb, t_emb], dim=0)
+
+            v_all = self._predict_velocity(
+                x_t=x_batched, llm_output=llm_batched, t_emb=t_emb_batched,
+            )
+            v_t, uncond_v_t = v_all[:B], v_all[B:]
+            v_t = cfg_alpha * v_t + (1 - cfg_alpha) * uncond_v_t
+
+            sampled = sampled + v_t * dt
 
         # quantize & mask end_of_audio
         sampled = torch.clamp(sampled, -1, 1)  # manually clip to [-1, 1]
