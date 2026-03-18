@@ -57,9 +57,6 @@ from vllm.multimodal.processing.processor import (
 from vllm.sequence import IntermediateTensors
 from vllm.tokenizers import cached_tokenizer_from_config
 from vllm.tokenizers.mistral import MistralTokenizer
-from vllm.v1.sample.logits_processor import LogitsProcessors
-from vllm.v1.sample.metadata import SamplingMetadata
-from vllm.v1.sample.sampler import Sampler
 
 weight_norm = torch.nn.utils.parametrizations.weight_norm
 
@@ -435,10 +432,18 @@ class FlowMatchingAudioTransformer(nn.Module):
         self._init_output_layer()
         self._init_layers()
 
-        self.sampler = Sampler(logprobs_mode="raw_logprobs")
-
         self._end_audio_token_id = AudioSpecialTokens.id(AudioSpecialTokens.end_audio)
         self._empty_audio_token_id = AudioSpecialTokens.id(AudioSpecialTokens.empty_audio)
+
+        # Flow matching constants (avoid re-creating every decode_one_frame call)
+        self._acoustic_decode_iters = 16
+        self._cfg_alpha = 1.2
+        self._noise_scale = 1.0
+        self.register_buffer(
+            "_timesteps",
+            torch.linspace(0, 1, self._acoustic_decode_iters),
+            persistent=False,
+        )
 
     def load_weight(self, weight: tuple[str, torch.Tensor]) -> str:
         params_dict = dict(self.named_parameters())
@@ -506,25 +511,16 @@ class FlowMatchingAudioTransformer(nn.Module):
         semantic_code: torch.Tensor,
         llm_hidden: torch.Tensor,
     ) -> torch.Tensor:
-        # TODO(chenyo): hardcoded, need to fix
-        acoustic_decode_iters = 16
-        noise_scale: float = 1.0
-        # we can assume all acoustic codebook to have same size
-        # TODO: implement atomic decoding step
         B = semantic_code.shape[0]
 
         # Skip decoding if codebook 0 is [END_AUDIO] token.
-        end_audio_token_id = self._end_audio_token_id
-        empty_audio_token_id = self._empty_audio_token_id
-        should_decode = semantic_code != end_audio_token_id
+        should_decode = semantic_code != self._end_audio_token_id
 
         # acoustic_codes starts from x_0
         x_0 = torch.randn(B, self.model_args.n_acoustic_codebook).to(dtype=llm_hidden.dtype, device=llm_hidden.device)
-        x_0 = noise_scale * x_0
+        x_0 = self._noise_scale * x_0
 
-        # schedule time steps
-        timesteps = torch.linspace(0, 1, acoustic_decode_iters, device=x_0.device, dtype=llm_hidden.dtype)
-        cfg_alpha = 1.2  # TODO(chenyo): hardcoded, need to fix
+        timesteps = self._timesteps.to(dtype=llm_hidden.dtype)
         llm_hidden_zero = torch.zeros_like(llm_hidden)
 
         # Euler integration with batched conditional + unconditional velocity
@@ -544,7 +540,7 @@ class FlowMatchingAudioTransformer(nn.Module):
                 x_t=x_batched, llm_output=llm_batched, t_emb=t_emb_batched,
             )
             v_t, uncond_v_t = v_all[:B], v_all[B:]
-            v_t = cfg_alpha * v_t + (1 - cfg_alpha) * uncond_v_t
+            v_t = self._cfg_alpha * v_t + (1 - self._cfg_alpha) * uncond_v_t
 
             sampled = sampled + v_t * dt
 
@@ -552,7 +548,7 @@ class FlowMatchingAudioTransformer(nn.Module):
         sampled = torch.clamp(sampled, -1, 1)  # manually clip to [-1, 1]
         scaled_x = ((sampled + 1) / 2) * (self.acoustic_embeddings_levels - 1)  # scale to 0 ~ max level
         output_codes = scaled_x.round().long()
-        output_codes[~should_decode] = empty_audio_token_id
+        output_codes[~should_decode] = self._empty_audio_token_id
         return output_codes + len(AudioSpecialTokens)
 
     def _predict_velocity(
