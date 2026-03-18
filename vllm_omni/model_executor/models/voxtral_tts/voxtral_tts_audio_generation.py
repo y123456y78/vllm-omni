@@ -593,12 +593,8 @@ class FlowMatchingAudioTransformer(nn.Module):
         semantic_logit[:, self._empty_audio_token_id] = -float("inf")  # 1 = eoa is allowed
         semantic_logit[:, (len(AudioSpecialTokens) + self.model_args.semantic_codebook_size) :] = -float("inf")
 
-        sampling_metadata = self._create_sampling_metadata(semantic_logit)
-
-        semantic_code = self.sampler(
-            semantic_logit,
-            sampling_metadata,
-        ).sampled_token_ids  # Bx1
+        # semantic_logit: Bx1
+        semantic_code = semantic_logit.argmax(dim=-1, keepdim=True)
 
         # acoustic codes, TODO(@chenyo): config sampling
         acoustic_codes = self.decode_one_frame(
@@ -611,35 +607,6 @@ class FlowMatchingAudioTransformer(nn.Module):
             dim=1,
         )
         return audio_codes
-
-    def _create_sampling_metadata(
-        self,
-        cb0_logit: torch.Tensor,
-    ) -> SamplingMetadata:
-        batch_size = cb0_logit.shape[0]
-
-        def full(v):
-            return torch.full((batch_size,), v, device=cb0_logit.device)
-
-        return SamplingMetadata(
-            temperature=full(1.0),
-            top_p=full(1.0),
-            top_k=full(1),
-            all_greedy=False,
-            all_random=False,
-            generators={},
-            max_num_logprobs=None,
-            no_penalties=True,
-            prompt_token_ids=None,
-            frequency_penalties=full(0.0),
-            presence_penalties=full(0.0),
-            repetition_penalties=full(0.0),
-            output_token_ids=[[] for _ in range(batch_size)],
-            allowed_token_ids_mask=None,
-            bad_words_token_ids={},
-            logitsprocs=LogitsProcessors(),
-        )
-
 
 class VoxtralTTSProcessorAdapter:
     """
