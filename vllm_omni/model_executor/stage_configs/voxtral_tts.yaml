@@ -23,7 +23,7 @@ stage_args:
       load_format:  mistral
       skip_mm_profiling: true
       enable_chunked_prefill: false
-      max_model_len: 32768
+      max_model_len: 4096
       custom_process_next_stage_input_func: vllm_omni.model_executor.stage_input_processors.voxtral_tts.generator2tokenizer_async_chunk
     output_connectors:
       to_stage_1: connector_of_shared_memory
