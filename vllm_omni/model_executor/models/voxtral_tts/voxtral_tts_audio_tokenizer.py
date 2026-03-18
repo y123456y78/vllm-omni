@@ -19,6 +19,13 @@ from vllm_omni.model_executor.models.voxtral_tts.voxtral_tts_audio_generation im
 )
 
 try:
+    from flash_attn import flash_attn_func
+    HAS_FLASH_ATTN = True
+except ImportError:
+    flash_attn_func = None
+    HAS_FLASH_ATTN = False
+
+try:
     from apex.normalization import FusedRMSNorm
 
     rms_norm = FusedRMSNorm
@@ -31,6 +38,12 @@ from vllm.logger import init_logger
 from vllm.model_executor.model_loader.weight_utils import default_weight_loader
 
 logger = init_logger(__name__)
+
+if not HAS_FLASH_ATTN:
+    logger.warning(
+        "flash_attn is not installed. Falling back to PyTorch SDPA for "
+        "audio tokenizer attention. Install flash-attn for better performance."
+    )
 
 weight_norm = torch.nn.utils.parametrizations.weight_norm
 
@@ -568,7 +581,21 @@ class Attention(nn.Module):
         xk = xk.view(bsz, seqlen, self.n_local_kv_heads, self.args.head_dim)
         xv = xv.view(bsz, seqlen, self.n_local_kv_heads, self.args.head_dim)
 
-        output = self._native_attention(xq, xk, xv)
+        if HAS_FLASH_ATTN:
+            alibi_slopes = self.alibi_slopes.to(torch.float32)
+            output = flash_attn_func(
+                xq,
+                xk,
+                xv,
+                causal=self.args.causal,
+                window_size=(
+                    self.sliding_window,
+                    0 if self.args.causal else self.sliding_window,
+                ),
+                alibi_slopes=alibi_slopes,
+            )
+        else:
+            output = self._native_attention(xq, xk, xv)
 
         output = output.view(bsz, seqlen, self.n_local_heads * self.args.head_dim)
         return self.wo(output).squeeze(0)
