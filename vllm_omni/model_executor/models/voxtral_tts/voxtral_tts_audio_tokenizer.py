@@ -11,7 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from vllm.config import VllmConfig
 
-from vllm_omni.model_executor.models.mistral_tts.mistral_tts_audio_generation import (
+from vllm_omni.model_executor.models.voxtral_tts.voxtral_tts_audio_generation import (
     AudioSpecialTokens,
     FeedForward,
     MultimodalAudioModelArgs,
@@ -688,7 +688,7 @@ class Transformer(nn.Module):
         return h
 
 
-class MistralTTSAudioTokenizer(nn.Module):
+class VoxtralTTSAudioTokenizer(nn.Module):
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
         super().__init__()
         config = vllm_config.model_config.hf_config

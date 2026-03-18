@@ -136,8 +136,8 @@ def main(
         outputs_dir = Path(output_dir)
         outputs_dir.mkdir(parents=True, exist_ok=True)
 
-    with gr.Blocks(title="Mistral TTS", fill_height=True) as demo:
-        gr.Markdown("## Mistral TTS")
+    with gr.Blocks(title="Voxtral TTS", fill_height=True) as demo:
+        gr.Markdown("## Voxtral TTS")
 
         with gr.Row():
             with gr.Column():
@@ -235,7 +235,7 @@ def main(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Mistral TTS Gradio Demo")
+    parser = argparse.ArgumentParser(description="Voxtral TTS Gradio Demo")
     parser.add_argument("--model", type=str, required=True, help="Path to the model checkpoint")
     parser.add_argument(
         "--output-dir",

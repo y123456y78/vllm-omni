@@ -30,10 +30,10 @@ from vllm_omni.outputs import OmniRequestOutput
 logger = init_logger(__name__)
 
 # TTS Configuration
-_MISTRAL_TTS_MODEL_STAGES = {"audio_generation"}
+_VOXTRAL_TTS_MODEL_STAGES = {"audio_generation"}
 _QWEN3_TTS_MODEL_STAGES = {"qwen3_tts"}
 _FISH_TTS_MODEL_STAGES = {"fish_speech_slow_ar"}
-_TTS_MODEL_STAGES: set[str] = _MISTRAL_TTS_MODEL_STAGES | _QWEN3_TTS_MODEL_STAGES | _FISH_TTS_MODEL_STAGES
+_TTS_MODEL_STAGES: set[str] = _VOXTRAL_TTS_MODEL_STAGES | _QWEN3_TTS_MODEL_STAGES | _FISH_TTS_MODEL_STAGES
 _TTS_LANGUAGES: set[str] = {
     "Auto",
     "Chinese",
@@ -216,8 +216,8 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
         model_stage = getattr(self._tts_stage.engine_args, "model_stage", None)
         if model_stage in _QWEN3_TTS_MODEL_STAGES:
             return "qwen3_tts"
-        if model_stage in _MISTRAL_TTS_MODEL_STAGES:
-            return "mistral_tts"
+        if model_stage in _VOXTRAL_TTS_MODEL_STAGES:
+            return "voxtral_tts"
         if model_stage in _FISH_TTS_MODEL_STAGES:
             return "fish_tts"
         return None
@@ -246,7 +246,7 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
         try:
             if self._tts_model_type == "qwen3_tts":
                 config = self.engine_client.model_config.hf_config.talker_config
-            elif self._tts_model_type == "mistral_tts":
+            elif self._tts_model_type == "voxtral_tts":
                 config = self.engine_client.model_config.hf_config.audio_config
             # Check for speakers in either spk_id or speaker_id
             for attr_name in ["spk_id", "speaker_id"]:
@@ -520,8 +520,8 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
 
     def _validate_tts_request(self, request: OpenAICreateSpeechRequest) -> str | None:
         """Validate TTS request parameters. Returns error message or None."""
-        if self._tts_model_type == "mistral_tts":
-            return self._validate_mistral_tts_request(request)
+        if self._tts_model_type == "voxtral_tts":
+            return self._validate_voxtral_tts_request(request)
         return self._validate_qwen_tts_request(request)
 
     def _validate_ref_audio_format(self, ref_audio: str) -> str | None:
@@ -534,12 +534,12 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
             return "ref_audio must be a URL (http/https), base64 data URL (data:...), or file URI (file://...)"
         return None
 
-    def _validate_mistral_tts_request(self, request: OpenAICreateSpeechRequest) -> str | None:
-        """Validate Mistral TTS request parameters. Returns error message or None."""
+    def _validate_voxtral_tts_request(self, request: OpenAICreateSpeechRequest) -> str | None:
+        """Validate Voxtral TTS request parameters. Returns error message or None."""
         if not request.input or not request.input.strip():
             return "Input text cannot be empty"
 
-        # Mistral TTS requires either a preset voice or ref_audio for voice cloning.
+        # Voxtral TTS requires either a preset voice or ref_audio for voice cloning.
         if request.voice is None and request.ref_audio is None:
             return "Either 'voice' (preset speaker) or 'ref_audio' (voice cloning) must be provided"
 
@@ -831,10 +831,10 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
 
         return params
 
-    # ---- Mistral TTS helpers ----
+    # ---- Voxtral TTS helpers ----
 
-    async def _build_mistral_prompt(self, request: OpenAICreateSpeechRequest) -> dict[str, Any]:
-        """Build Mistral TTS engine prompt from shared TTS parameters."""
+    async def _build_voxtral_prompt(self, request: OpenAICreateSpeechRequest) -> dict[str, Any]:
+        """Build Voxtral TTS engine prompt from shared TTS parameters."""
         from mistral_common.protocol.speech.request import SpeechRequest
 
         text = request.input
@@ -962,8 +962,8 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
             if validation_error:
                 raise ValueError(validation_error)
 
-            if self._tts_model_type == "mistral_tts":
-                prompt = await self._build_mistral_prompt(request)
+            if self._tts_model_type == "voxtral_tts":
+                prompt = await self._build_voxtral_prompt(request)
                 tts_params = {}
             else:
                 tts_params = self._build_tts_params(request)
@@ -980,8 +980,8 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
         request_id = f"speech-{random_uuid()}"
         if self._is_fish_speech:
             model_type = "fish_speech"
-        elif self._tts_model_type == "mistral_tts":
-            model_type = "mistral_tts"
+        elif self._tts_model_type == "voxtral_tts":
+            model_type = "voxtral_tts"
         elif self._is_tts:
             model_type = tts_params.get("task_type", ["unknown"])[0]
         else:

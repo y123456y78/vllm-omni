@@ -1,5 +1,5 @@
 """
-This example shows how to use vLLM for running Mistral TTS
+This example shows how to use vLLM for running Voxtral TTS
 """
 
 import asyncio
@@ -225,7 +225,7 @@ def run_non_streaming(inputs, sampling_params_list, model_name, args, output_dir
 
 
 def parse_args() -> Namespace:
-    parser = FlexibleArgumentParser(description="Demo on using vLLM for offline inference with Mistral TTS")
+    parser = FlexibleArgumentParser(description="Demo on using vLLM for offline inference with Voxtral TTS")
     parser.add_argument(
         "--model",
         type=str,

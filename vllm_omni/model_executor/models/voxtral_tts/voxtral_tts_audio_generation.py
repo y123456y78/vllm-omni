@@ -641,7 +641,7 @@ class FlowMatchingAudioTransformer(nn.Module):
         )
 
 
-class MistralTTSProcessorAdapter:
+class VoxtralTTSProcessorAdapter:
     """
     Provide a HF-compatible interface
     """
@@ -761,7 +761,7 @@ class MistralTTSProcessorAdapter:
             return BatchFeature({"input_ids": torch.tensor(self.tokenizer(text).input_ids)})
 
 
-class MistralTTSProcessingInfo(BaseProcessingInfo):
+class VoxtralTTSProcessingInfo(BaseProcessingInfo):
     def get_tokenizer(self) -> MistralTokenizer:
         tokenizer = cached_tokenizer_from_config(self.ctx.model_config)
         if not isinstance(tokenizer, MistralTokenizer):
@@ -775,8 +775,8 @@ class MistralTTSProcessingInfo(BaseProcessingInfo):
             expected_hidden_size=self._get_expected_hidden_size(),
         )
 
-    def get_hf_processor(self, **kwargs: object) -> MistralTTSProcessorAdapter:
-        return MistralTTSProcessorAdapter(self.get_tokenizer())
+    def get_hf_processor(self, **kwargs: object) -> VoxtralTTSProcessorAdapter:
+        return VoxtralTTSProcessorAdapter(self.get_tokenizer())
 
     def get_supported_mm_limits(self) -> Mapping[str, int | None]:
         return {"audio": 1}
@@ -796,7 +796,7 @@ class MistralTTSProcessingInfo(BaseProcessingInfo):
         return self.get_max_audio_tokens() * int(processor.sampling_rate // processor.frame_rate)
 
 
-class MistralTTSDummyInputsBuilder(BaseDummyInputsBuilder[MistralTTSProcessingInfo]):
+class VoxtralTTSDummyInputsBuilder(BaseDummyInputsBuilder[VoxtralTTSProcessingInfo]):
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
         return ""
 
@@ -859,7 +859,7 @@ class MistralTTSDummyInputsBuilder(BaseDummyInputsBuilder[MistralTTSProcessingIn
         return ProcessorInputs(prompt=dummy_tokens, mm_data_items=parsed_mm_items)
 
 
-class MistralTTSMultiModalProcessor(BaseMultiModalProcessor[MistralTTSProcessingInfo]):
+class VoxtralTTSMultiModalProcessor(BaseMultiModalProcessor[VoxtralTTSProcessingInfo]):
     def _get_mm_fields_config(
         self,
         hf_inputs: Mapping[str, NestedTensors],
@@ -910,11 +910,11 @@ class MistralTTSMultiModalProcessor(BaseMultiModalProcessor[MistralTTSProcessing
 
 
 @MULTIMODAL_REGISTRY.register_processor(
-    MistralTTSMultiModalProcessor,
-    info=MistralTTSProcessingInfo,
-    dummy_inputs=MistralTTSDummyInputsBuilder,
+    VoxtralTTSMultiModalProcessor,
+    info=VoxtralTTSProcessingInfo,
+    dummy_inputs=VoxtralTTSDummyInputsBuilder,
 )
-class MistralTTSAudioGenerationForConditionalGeneration(nn.Module, SupportsMultiModal):
+class VoxtralTTSAudioGenerationForConditionalGeneration(nn.Module, SupportsMultiModal):
     supported_languages = SUPPORTED_LANGS
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
@@ -932,7 +932,7 @@ class MistralTTSAudioGenerationForConditionalGeneration(nn.Module, SupportsMulti
             vllm_config=vllm_config,
             hf_config=config,
             prefix=maybe_prefix(prefix, "audio_tokenizer"),
-            architectures=["MistralTTSAudioTokenizer"],
+            architectures=["VoxtralTTSAudioTokenizer"],
         )
         self.downsample_factor = self.audio_tokenizer.downsample_factor
         self.acoustic_transformer = FlowMatchingAudioTransformer(

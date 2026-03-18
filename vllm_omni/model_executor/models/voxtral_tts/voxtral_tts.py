@@ -18,13 +18,13 @@ from vllm.v1.sample.metadata import SamplingMetadata
 from vllm.v1.sample.sampler import Sampler
 
 from vllm_omni.model_executor.custom_process_mixin import CustomProcessMixin
-from vllm_omni.model_executor.models.mistral_tts.cuda_graph_acoustic_transformer_wrapper import (
+from vllm_omni.model_executor.models.voxtral_tts.cuda_graph_acoustic_transformer_wrapper import (
     CUDAGraphAcousticTransformerWrapper,
 )
-from vllm_omni.model_executor.models.mistral_tts.mistral_tts_audio_generation import (
-    MistralTTSDummyInputsBuilder,
-    MistralTTSMultiModalProcessor,
-    MistralTTSProcessingInfo,
+from vllm_omni.model_executor.models.voxtral_tts.voxtral_tts_audio_generation import (
+    VoxtralTTSDummyInputsBuilder,
+    VoxtralTTSMultiModalProcessor,
+    VoxtralTTSProcessingInfo,
 )
 from vllm_omni.model_executor.models.output_templates import OmniOutput
 
@@ -88,11 +88,11 @@ def apply_ctx_frames_cutting(
 
 
 @MULTIMODAL_REGISTRY.register_processor(
-    MistralTTSMultiModalProcessor,
-    info=MistralTTSProcessingInfo,
-    dummy_inputs=MistralTTSDummyInputsBuilder,
+    VoxtralTTSMultiModalProcessor,
+    info=VoxtralTTSProcessingInfo,
+    dummy_inputs=VoxtralTTSDummyInputsBuilder,
 )
-class MistralTTSForConditionalGeneration(
+class VoxtralTTSForConditionalGeneration(
     nn.Module,
     SupportsMultiModal,
     CustomProcessMixin,
@@ -117,7 +117,7 @@ class MistralTTSForConditionalGeneration(
                 vllm_config=vllm_config,
                 hf_config=config,
                 prefix=maybe_prefix(prefix, "audio_generation"),
-                architectures=["MistralTTSAudioGeneration"],
+                architectures=["VoxtralTTSAudioGeneration"],
             )
             self.model = self.audio_generation
             self.audio_tokenizer = None
@@ -142,7 +142,7 @@ class MistralTTSForConditionalGeneration(
                 vllm_config=vllm_config,
                 hf_config=config,
                 prefix=maybe_prefix(prefix, "audio_tokenizer"),
-                architectures=["MistralTTSAudioTokenizer"],
+                architectures=["VoxtralTTSAudioTokenizer"],
             )
             self.model = self.audio_tokenizer
         else:

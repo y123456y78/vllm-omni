@@ -33,10 +33,10 @@ ACOUSTIC_EMBEDDINGS_LEVELS = 1024
 
 # Load CUDAGraphAcousticTransformerWrapper: try package import first, fall back to direct file load
 try:
-    from vllm_omni.model_executor.models.mistral_tts.cuda_graph_acoustic_transformer_wrapper import (
+    from vllm_omni.model_executor.models.voxtral_tts.cuda_graph_acoustic_transformer_wrapper import (
         CUDAGraphAcousticTransformerWrapper,
     )
-    from vllm_omni.model_executor.models.mistral_tts.mistral_tts_audio_generation import (
+    from vllm_omni.model_executor.models.voxtral_tts.voxtral_tts_audio_generation import (
         AudioSpecialTokens,
     )
 except Exception:
@@ -49,7 +49,7 @@ except Exception:
         "vllm_omni",
         "model_executor",
         "models",
-        "mistral_tts",
+        "voxtral_tts",
         "cuda_graph_acoustic_transformer_wrapper.py",
     )
     _spec = importlib.util.spec_from_file_location(
@@ -68,10 +68,10 @@ except Exception:
         "vllm_omni",
         "model_executor",
         "models",
-        "mistral_tts",
-        "mistral_tts_audio_generation.py",
+        "voxtral_tts",
+        "voxtral_tts_audio_generation.py",
     )
-    _spec2 = importlib.util.spec_from_file_location("mistral_tts_audio_generation", os.path.abspath(_AUDIO_GEN_PATH))
+    _spec2 = importlib.util.spec_from_file_location("voxtral_tts_audio_generation", os.path.abspath(_AUDIO_GEN_PATH))
     _mod2 = importlib.util.module_from_spec(_spec2)
     _spec2.loader.exec_module(_mod2)
     AudioSpecialTokens = _mod2.AudioSpecialTokens
@@ -115,7 +115,7 @@ class SyntheticAcousticTransformer(nn.Module):
 
 
 class SyntheticModel(nn.Module):
-    """Mimics MistralTTSAudioGenerationForConditionalGeneration interface."""
+    """Mimics VoxtralTTSAudioGenerationForConditionalGeneration interface."""
 
     def __init__(self):
         super().__init__()

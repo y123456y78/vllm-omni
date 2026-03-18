@@ -4,7 +4,7 @@ vLLM-Omni provides an OpenAI-compatible API for text-to-speech (TTS) generation.
 
 - **Qwen3-TTS** (`Qwen/Qwen3-TTS-12Hz-*`) -- Qwen3-based TTS with CustomVoice, VoiceDesign, and Base (voice cloning) task types. Output: 24 kHz.
 - **Fish Speech S2 Pro** (`fishaudio/s2-pro`) -- Dual-AR TTS with DAC codec. Supports text-to-speech and voice cloning via reference audio. Output: 44.1 kHz.
-- **Mistral TTS** (`mistralai/tts-model`) -- AR + FlowMatching TTS with preset voices. Output: 24 kHz.
+- **Voxtral TTS** (`mistralai/tts-model`) -- AR + FlowMatching TTS with preset voices. Output: 24 kHz.
 
 Each server instance runs a single model (specified at startup via `vllm serve <model> --omni`).
 
@@ -30,9 +30,9 @@ vllm-omni serve fishaudio/s2-pro \
     --enforce-eager \
     --gpu-memory-utilization 0.9
 
-# Mistral TTS
+# Voxtral TTS
 vllm serve mistralai/tts-model \
-    --stage-configs-path vllm_omni/model_executor/stage_configs/mistral_tts.yaml \
+    --stage-configs-path vllm_omni/model_executor/stage_configs/voxtral_tts.yaml \
     --omni \
     --port 8091 \
     --trust-remote-code \
@@ -356,7 +356,7 @@ curl -X POST http://localhost:8091/v1/audio/speech \
 
 Fish Speech uses `ref_audio` and `ref_text` for voice cloning (no `task_type` needed). The `voice` field should be set to `"default"`. See the [Fish Speech online serving example](../user_guide/examples/online_serving/fish_speech.md) for details.
 
-### Mistral TTS
+### Voxtral TTS
 
 | Model | Description |
 |-------|-------------|

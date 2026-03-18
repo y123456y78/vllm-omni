@@ -1,5 +1,5 @@
 """
-CUDA Graph wrapper for AcousticTransformer in MistralTTS.
+CUDA Graph wrapper for AcousticTransformer in VoxtralTTS.
 
 Currently it support FlowMatching implementation only.
 
@@ -12,7 +12,7 @@ import torch
 from torch.cuda import CUDAGraph
 from vllm.logger import init_logger
 
-from vllm_omni.model_executor.models.mistral_tts.mistral_tts_audio_generation import (
+from vllm_omni.model_executor.models.voxtral_tts.voxtral_tts_audio_generation import (
     AudioSpecialTokens,
 )
 

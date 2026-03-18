@@ -140,18 +140,18 @@ _OMNI_MODELS = {
         "fish_speech_dac_decoder",
         "FishSpeechDACDecoder",
     ),
-    ## Mistral TTS
-    "MistralTTSForConditionalGeneration": (
-        "mistral_tts",
-        "mistral_tts",
-        "MistralTTSForConditionalGeneration",
+    ## Voxtral TTS
+    "VoxtralTTSForConditionalGeneration": (
+        "voxtral_tts",
+        "voxtral_tts",
+        "VoxtralTTSForConditionalGeneration",
     ),
-    "MistralTTSAudioGeneration": (
-        "mistral_tts",
-        "mistral_tts_audio_generation",
-        "MistralTTSAudioGenerationForConditionalGeneration",
+    "VoxtralTTSAudioGeneration": (
+        "voxtral_tts",
+        "voxtral_tts_audio_generation",
+        "VoxtralTTSAudioGenerationForConditionalGeneration",
     ),
-    "MistralTTSAudioTokenizer": ("mistral_tts", "mistral_tts_audio_tokenizer", "MistralTTSAudioTokenizer"),
+    "VoxtralTTSAudioTokenizer": ("voxtral_tts", "voxtral_tts_audio_tokenizer", "VoxtralTTSAudioTokenizer"),
 }
 
 

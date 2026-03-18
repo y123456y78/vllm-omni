@@ -11,7 +11,7 @@ from decoded audio arrays.
 import pytest
 import torch
 
-from vllm_omni.model_executor.models.mistral_tts.mistral_tts import (
+from vllm_omni.model_executor.models.voxtral_tts.voxtral_tts import (
     apply_ctx_frames_cutting,
     parse_batched_audio_input,
 )

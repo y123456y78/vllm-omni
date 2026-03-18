@@ -10,10 +10,10 @@ from vllm.transformers_utils.config import MistralConfigParser, register_config_
 logger = init_logger(__name__)
 
 
-class MistralTTSConfig(PretrainedConfig):
-    """HuggingFace-style config for Mistral TTS models."""
+class VoxtralTTSConfig(PretrainedConfig):
+    """HuggingFace-style config for Voxtral TTS models."""
 
-    model_type = "mistral_tts"
+    model_type = "voxtral_tts"
 
     def __init__(
         self,
@@ -37,10 +37,10 @@ class MistralTTSConfig(PretrainedConfig):
 
 
 @register_config_parser("mistral")
-class MistralTTSConfigParser(MistralConfigParser):
+class VoxtralTTSConfigParser(MistralConfigParser):
     """Config parser that extends the base Mistral parser with TTS support.
 
-    This only support mistral_tts for now.
+    This only support voxtral_tts for now.
     """
 
     def _remap_mistral_audio_args(self, config_dict: dict) -> dict:
@@ -90,10 +90,10 @@ class MistralTTSConfigParser(MistralConfigParser):
         # The text sub-model is a plain MistralForCausalLM
         text_config.setdefault("architectures", ["MistralForCausalLM"])
 
-        config = MistralTTSConfig(
+        config = VoxtralTTSConfig(
             text_config=PretrainedConfig.from_dict(text_config),
             audio_config=audio_config,
-            architectures=config_dict.get("architectures", ["MistralTTSForConditionalGeneration"]),
+            architectures=config_dict.get("architectures", ["VoxtralTTSForConditionalGeneration"]),
         )
 
         return config_dict, config

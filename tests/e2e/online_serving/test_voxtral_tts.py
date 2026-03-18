@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """
-E2E Online tests for Mistral TTS model with text input and audio output.
+E2E Online tests for Voxtral TTS model with text input and audio output.
 
 These tests verify the /v1/audio/speech endpoint works correctly with
 actual model inference, not mocks.
@@ -22,7 +22,7 @@ from tests.utils import hardware_test
 
 MODEL = "mistralai/tts-model"
 STAGE_CONFIG = str(
-    Path(__file__).parent.parent.parent.parent / "vllm_omni" / "model_executor" / "stage_configs" / "mistral_tts.yaml"
+    Path(__file__).parent.parent.parent.parent / "vllm_omni" / "model_executor" / "stage_configs" / "voxtral_tts.yaml"
 )
 EXTRA_ARGS = ["--trust-remote-code", "--enforce-eager", "--disable-log-stats"]
 TEST_PARAMS = [OmniServerParams(model=MODEL, stage_config_path=STAGE_CONFIG, server_args=EXTRA_ARGS)]
@@ -61,8 +61,8 @@ MIN_AUDIO_BYTES = 10000
 
 
 @pytest.mark.parametrize("omni_server", TEST_PARAMS, indirect=True)
-class TestMistralTTSFixedVoice:
-    """E2E tests for Mistral TTS model."""
+class TestVoxtralTTSFixedVoice:
+    """E2E tests for Voxtral TTS model."""
 
     @pytest.mark.core_model
     @pytest.mark.omni
@@ -156,7 +156,7 @@ class TestMistralTTSFixedVoice:
 
 
 @pytest.mark.parametrize("omni_server", TEST_PARAMS, indirect=True)
-class TestMistralTTSAPIEndpoints:
+class TestVoxtralTTSAPIEndpoints:
     """Test API endpoint functionality."""
 
     @pytest.mark.advanced_model
