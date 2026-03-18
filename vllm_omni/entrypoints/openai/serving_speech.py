@@ -148,7 +148,7 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
         )
         self._fish_speech_tokenizer = None
 
-        # Determine TTS model type: "qwen3_tts", "mistral_tts", or None
+        # Determine TTS model type or None
         self._tts_model_type = self._detect_tts_model_type()
 
         # Cache TTS configuration values (computed once, reused per request)
@@ -213,7 +213,7 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
         """Detect TTS model type from the stage's model_stage attribute."""
         if self._tts_stage is None:
             return None
-        model_stage = getattr(self._tts_stage, "model_stage", None)
+        model_stage = getattr(self._tts_stage.engine_args, "model_stage", None)
         if model_stage in _QWEN3_TTS_MODEL_STAGES:
             return "qwen3_tts"
         if model_stage in _MISTRAL_TTS_MODEL_STAGES:

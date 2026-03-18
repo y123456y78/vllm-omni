@@ -853,11 +853,10 @@ class MistralTTSDummyInputsBuilder(BaseDummyInputsBuilder[MistralTTSProcessingIn
             36,
             25,
         ]
-        # TODO(chenyo): check if this is still true
-        # voxtral tokenizer adds padding to the audio
-        # so we need to update the audio arrays
-        dummy_mm_items["audio"] = dummy_audios
-        return ProcessorInputs(prompt=dummy_tokens, mm_data_items=dummy_mm_items)
+
+        parsed_mm_items = self.info.parse_mm_data(dummy_mm_items, validate=False)
+
+        return ProcessorInputs(prompt=dummy_tokens, mm_data_items=parsed_mm_items)
 
 
 class MistralTTSMultiModalProcessor(BaseMultiModalProcessor[MistralTTSProcessingInfo]):
