@@ -1027,11 +1027,9 @@ class VoxtralTTSAudioGenerationForConditionalGeneration(nn.Module, SupportsMulti
         """
         shape = (fake_eos.shape[0], self.vocab_size)
         fake_logits = torch.full(shape, float("-inf"), device=fake_eos.device)
-        for i in range(fake_logits.shape[0]):
-            if torch.is_nonzero(fake_eos[i][0]):
-                fake_logits[i, self.eos_tok_id] = 1.0
-            else:
-                fake_logits[i, self.audio_tok_id] = 1.0
+        is_eos = fake_eos[:, 0].bool()
+        fake_logits[is_eos, self.eos_tok_id] = 1.0
+        fake_logits[~is_eos, self.audio_tok_id] = 1.0
         return fake_logits
 
     # TODO(chenyo): Remove this
