@@ -2,9 +2,38 @@ from typing import Any
 
 import torch
 from vllm.logger import init_logger
-
+from vllm_omni.inputs.data import OmniTokensPrompt
+from vllm.inputs import TextPrompt
 logger = init_logger(__name__)
 
+def generator2tokenizer(
+    stage_list,
+    engine_input_source,
+    prompt: OmniTokensPrompt | TextPrompt = None,
+    requires_multimodal_data: bool = False,
+):
+    if not engine_input_source:
+        raise ValueError("engine_input_source cannot be empty")
+    source_stage_id = engine_input_source[0]
+    if source_stage_id >= len(stage_list):
+        raise IndexError(f"Invalid stage_id: {source_stage_id}")
+    if stage_list[source_stage_id].engine_outputs is None:
+        raise RuntimeError(f"Stage {source_stage_id} has no outputs yet")
+
+    generator_outputs = stage_list[source_stage_id].engine_outputs
+    tokenizer_inputs = []
+    for generator_output in generator_outputs:
+        output = generator_output.outputs[0]
+        audio_tokens = torch.cat(output.multimodal_output["audio"], dim=-1).flatten().detach().cpu().tolist()
+        tokenizer_inputs.append(
+            OmniTokensPrompt(
+                prompt_token_ids=audio_tokens,
+                multi_modal_data=None,
+                mm_processor_kwargs=None,
+            )
+        )
+
+    return tokenizer_inputs
 
 def _extract_last_frame(pooling_output: dict[str, Any]) -> torch.Tensor | None:
     audio = pooling_output.get("audio")

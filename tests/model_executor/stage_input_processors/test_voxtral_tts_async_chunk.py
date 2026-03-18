@@ -7,9 +7,72 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from vllm_omni.model_executor.stage_input_processors.voxtral_tts import generator2tokenizer_async_chunk
+from vllm_omni.model_executor.stage_input_processors.voxtral_tts import (
+    generator2tokenizer,
+    generator2tokenizer_async_chunk,
+)
 
 pytestmark = [pytest.mark.core_model, pytest.mark.cpu]
+
+
+# ---- Helpers for generator2tokenizer (non-streaming) ----
+
+
+def _make_stage(engine_outputs):
+    return SimpleNamespace(engine_outputs=engine_outputs)
+
+
+def _make_output(audio_tensors):
+    """Build a single generator output with multimodal_output["audio"] = audio_tensors."""
+    return SimpleNamespace(
+        outputs=[SimpleNamespace(multimodal_output={"audio": audio_tensors})],
+    )
+
+
+# ---- Tests for generator2tokenizer ----
+
+
+class TestGenerator2Tokenizer:
+
+    def test_single_output_single_chunk(self):
+        """Single output with one audio tensor produces correct prompt_token_ids."""
+        audio = torch.tensor([10, 20, 30, 40])
+        stage = _make_stage([_make_output([audio])])
+
+        result = generator2tokenizer([stage], engine_input_source=[0])
+
+        assert len(result) == 1
+        assert result[0]["prompt_token_ids"] == [10, 20, 30, 40]
+        assert result[0]["multi_modal_data"] is None
+
+    def test_2d_audio_tensors_flattened(self):
+        """2D audio tensors (e.g., multi-codebook frames) are flattened."""
+        audio = torch.tensor([[1, 2, 3], [4, 5, 6]])  # (2, 3)
+        stage = _make_stage([_make_output([audio])])
+
+        result = generator2tokenizer([stage], engine_input_source=[0])
+
+        assert result[0]["prompt_token_ids"] == [1, 2, 3, 4, 5, 6]
+
+    def test_empty_engine_input_source_raises(self):
+        """Empty engine_input_source raises ValueError."""
+        stage = _make_stage([_make_output([torch.tensor([1])])])
+        with pytest.raises(ValueError, match="cannot be empty"):
+            generator2tokenizer([stage], engine_input_source=[])
+
+    def test_invalid_stage_id_raises(self):
+        """Stage id beyond stage_list length raises IndexError."""
+        stage = _make_stage([_make_output([torch.tensor([1])])])
+        with pytest.raises(IndexError, match="Invalid stage_id"):
+            generator2tokenizer([stage], engine_input_source=[5])
+
+    def test_no_outputs_yet_raises(self):
+        """Stage with engine_outputs=None raises RuntimeError."""
+        stage = _make_stage(engine_outputs=None)
+        with pytest.raises(RuntimeError, match="no outputs yet"):
+            generator2tokenizer([stage], engine_input_source=[0])
+
+# ---- Helpers for generator2tokenizer_async_chunk (streaming) ----
 
 
 def _req(external_req_id: str, *, finished: bool):
