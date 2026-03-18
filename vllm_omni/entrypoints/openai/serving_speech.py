@@ -263,19 +263,6 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
 
         return set()
 
-    def _get_tts_tokenizer(self):
-        """Lazy-load and cache the TTS tokenizer."""
-        if self._tts_tokenizer is None:
-            from transformers import AutoTokenizer
-
-            model_name = self.engine_client.model_config.model
-            self._tts_tokenizer = AutoTokenizer.from_pretrained(
-                model_name,
-                trust_remote_code=True,
-                padding_side="left",
-            )
-        return self._tts_tokenizer
-
     def _estimate_ref_code_len(self, ref_audio: object) -> int | None:
         """Estimate ref_code length from ref_audio waveform without running the codec.
 
@@ -318,7 +305,15 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
                 Qwen3TTSTalkerForConditionalGeneration,
             )
 
-            tokenizer = self._get_tts_tokenizer()
+            if self._tts_tokenizer is None:
+                from transformers import AutoTokenizer
+
+                model_name = self.engine_client.model_config.model
+                self._tts_tokenizer = AutoTokenizer.from_pretrained(
+                    model_name,
+                    trust_remote_code=True,
+                    padding_side="left",
+                )
             hf_config = self.engine_client.model_config.hf_config
             talker_config = hf_config.talker_config
             task_type = (tts_params.get("task_type") or ["CustomVoice"])[0]
@@ -846,15 +841,21 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
         voice = request.voice
         ref_audio = request.ref_audio
         assert voice or ref_audio, "Either voice or ref_audio must be provided"
-        instruct_tokenizer = self._get_tts_tokenizer().tokenizer.instruct_tokenizer
+        # Strip data URI prefix — mistral_common expects raw base64
+        if ref_audio is not None and isinstance(ref_audio, str) and ref_audio.startswith("data:"):
+            _, _, ref_audio = ref_audio.partition(",")
+        if self._tts_tokenizer is None:
+            from vllm.tokenizers import cached_tokenizer_from_config
+            mistral_tokenizer = cached_tokenizer_from_config(self.engine_client.model_config)
+            self._tts_tokenizer = mistral_tokenizer.instruct
         if voice is not None:
-            tokens = instruct_tokenizer.encode_speech_request(SpeechRequest(input=text, voice=voice)).tokens
+            tokens = self._tts_tokenizer.encode_speech_request(SpeechRequest(input=text, voice=voice)).tokens
             return {
                 "prompt_token_ids": tokens,
                 "additional_information": {"voice": [voice]},
             }
         else:
-            tokenized = instruct_tokenizer.encode_speech_request(SpeechRequest(input=text, ref_audio=ref_audio))
+            tokenized = self._tts_tokenizer.encode_speech_request(SpeechRequest(input=text, ref_audio=ref_audio))
             audio = tokenized.audios[0]
             return {
                 "prompt_token_ids": tokenized.tokens,
