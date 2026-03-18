@@ -435,8 +435,10 @@ class FlowMatchingAudioTransformer(nn.Module):
         self._end_audio_token_id = AudioSpecialTokens.id(AudioSpecialTokens.end_audio)
         self._empty_audio_token_id = AudioSpecialTokens.id(AudioSpecialTokens.empty_audio)
 
-        # Flow matching constants (avoid re-creating every decode_one_frame call)
+        # Flow matching constants
+        # TODO(chenyo): hardcoded, need to fix
         self._acoustic_decode_iters = 16
+        # TODO(chenyo): hardcoded, need to fix
         self._cfg_alpha = 1.2
         self._noise_scale = 1.0
         self.register_buffer(
