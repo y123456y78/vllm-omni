@@ -98,6 +98,7 @@ plugins:
         - "vllm_omni.diffusion.quantization"  # avoid importing vllm in mkdocs building
         - "vllm_omni.entrypoints.async_diffusion"  # avoid importing vllm in mkdocs building
         - "vllm_omni.entrypoints.openai"  # avoid importing vllm in mkdocs building
+        - "vllm_omni.model_executor.models.voxtral_tts.configuration_voxtral_tts"  # avoid importing vllm in mkdocs building
         - "vllm_omni.entrypoints.openai.protocol"  # avoid importing vllm in mkdocs building
   - mkdocstrings:
       handlers:
