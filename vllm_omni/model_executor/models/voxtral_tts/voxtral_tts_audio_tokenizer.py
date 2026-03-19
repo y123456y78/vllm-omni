@@ -984,6 +984,10 @@ class VoxtralTTSAudioTokenizer(nn.Module):
         for waveform in x:
             # TODO(@alexhliu): we can batch this for better performance
             assert waveform.dim() == 1
+            if torch.min(waveform) < -1.0:
+                logger.warning("Min value of input waveform signal is %s", torch.min(waveform))
+            if torch.max(waveform) > 1.0:
+                logger.warning("Max value of input waveform signal is %s", torch.max(waveform))
             audio_code = self._tokenize_audio(waveform.unsqueeze(0).unsqueeze(0))  # BxVxL, B==1
             audio_code = audio_code + len(
                 AudioSpecialTokens.all_special_tokens()
@@ -1093,6 +1097,10 @@ class VoxtralTTSAudioTokenizer(nn.Module):
         audio_codes = padded.to(device=torch.device("cuda"))  # [B, T, K]
         audio_values = self.decode(audio_codes.transpose(1, 2), dtype=torch.bfloat16)  # [B, 1, T_out]
         audio_values = audio_values.detach().cpu().float().squeeze(1)  # [B, T_out]
+        if torch.min(audio_values) < -1.0:
+            logger.warning("Min value of decoded waveform signal is %s", torch.min(audio_values))
+        if torch.max(audio_values) > 1.0:
+            logger.warning("Max value of decoded waveform signal is %s", torch.max(audio_values))
 
         # Trim padding and reassemble per request
         for orig_idx, chunk_indices in chunk_map:
