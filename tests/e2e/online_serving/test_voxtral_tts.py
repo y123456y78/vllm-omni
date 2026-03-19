@@ -22,7 +22,6 @@ from tests.utils import hardware_test
 
 MODEL = "mistralai/tts-model"
 
-pytest.skip("Skip for now. Once model is released this will be removed.", allow_module_level=True)
 STAGE_CONFIG = str(
     Path(__file__).parent.parent.parent.parent / "vllm_omni" / "model_executor" / "stage_configs" / "voxtral_tts.yaml"
 )
