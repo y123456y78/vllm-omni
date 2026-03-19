@@ -320,7 +320,7 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
             return Qwen3TTSTalkerForConditionalGeneration.estimate_prompt_len_from_additional_information(
                 additional_information=tts_params,
                 task_type=task_type,
-                tokenize_prompt=lambda t: tokenizer(t, padding=False)["input_ids"],
+                tokenize_prompt=lambda t: self._tts_tokenizer(t, padding=False)["input_ids"],
                 codec_language_id=getattr(talker_config, "codec_language_id", None),
                 spk_is_dialect=getattr(talker_config, "spk_is_dialect", None),
                 estimate_ref_code_len=self._estimate_ref_code_len,
