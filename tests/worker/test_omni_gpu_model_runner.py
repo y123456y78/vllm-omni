@@ -65,7 +65,6 @@ def _make_runner(req_ids=("r1", "r2"), hidden_size=4):
     runner.input_batch = DummyInputBatch(list(req_ids))
     runner.requests = {rid: DummyReqState() for rid in req_ids}
     runner.model_intermediate_buffer = {}
-    runner._gpu_resident_buffer_keys = set()
 
     # query_start_loc.cpu[req_index] is used to locate the token position
     # in the flattened `inputs_embeds`.

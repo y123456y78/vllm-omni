@@ -1,8 +1,9 @@
+import sys
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import torch
-from vllm.compilation.cuda_graph import CUDAGraphWrapper
+from vllm.compilation.cuda_graph import CUDAGraphWrapper as _OriginalCUDAGraphWrapper
 from vllm.config import CUDAGraphMode
 from vllm.distributed.parallel_state import get_pp_group
 from vllm.forward_context import set_forward_context
@@ -36,13 +37,28 @@ else:
 logger = init_logger(__name__)
 
 
+class CUDAGraphWrapper(_OriginalCUDAGraphWrapper):
+    def __getattr__(self, key: str) -> Any:
+        # allow accessing the attributes of the runnable.
+        if hasattr(self.runnable, key):
+            return getattr(self.runnable, key)
+        raise AttributeError(f"Attribute {key} not exists in the runnable of cudagraph wrapper")
+
+
+# Patch vLLM's CUDAGraphWrapper with our optimized version
+for _module_name, _module in sys.modules.items():
+    if "vllm" not in _module_name:
+        continue
+    if hasattr(_module, "CUDAGraphWrapper") and _module.CUDAGraphWrapper is _OriginalCUDAGraphWrapper:
+        _module.CUDAGraphWrapper = CUDAGraphWrapper
+
+
 class OmniGPUModelRunner(GPUModelRunner):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.model_intermediate_buffer: dict[str, dict[str, Any]] = {}
         self._omni_num_scheduled_tokens_np: np.ndarray | None = None
         self._omni_last_model_output: object | None = None
-        self._gpu_resident_buffer_keys = set()
 
     def initialize_metadata_builders(self, kv_cache_config, kernel_block_sizes):
         """Override to fix scheduler_metadata buffer size for FA3 + CUDA graph.
@@ -100,8 +116,6 @@ class OmniGPUModelRunner(GPUModelRunner):
             )
             self.last_talker_hidden = self._make_buffer(max_batch_size, hidden_size, dtype=self.dtype, numpy=False)
             self.text_step = self._make_buffer(max_batch_size, hidden_size, dtype=self.dtype, numpy=False)
-
-        self._gpu_resident_buffer_keys: set[str] = getattr(self.model, "gpu_resident_buffer_keys", set())
 
     def _init_mrope_positions(self, req_state: CachedRequestState):
         """Initialize M-RoPE positions for multimodal inputs.
@@ -1305,14 +1319,16 @@ class OmniGPUModelRunner(GPUModelRunner):
             None, self.vllm_config, cudagraph_runtime_mode=_cudagraph_mode, batch_descriptor=batch_desc
         ):
             req_embeds, code_predictor_codes = self.talker_mtp(req_input_ids, req_embeds, last_talker_hidden, text_step)
-        # update the inputs_embeds and code_predictor_codes
-        code_predictor_codes_cpu = code_predictor_codes.detach().to("cpu").contiguous()
+        # code_predictor_codes stays on GPU here; _update_intermediate_buffer
+        # keeps it device-resident when the key is in gpu_resident_buffer_keys.
+        # D2H is deferred to sample_tokens where hidden_states.to("cpu") already
+        # syncs the stream, avoiding a per-step cudaStreamSynchronize.
         out_key = getattr(self.model, "talker_mtp_output_key", "code_predictor_codes")
         for idx, req_id in enumerate(decode_req_ids):
             req_index = self.input_batch.req_ids.index(req_id)
             start_offset = int(self.query_start_loc.cpu[req_index])
             inputs_embeds[start_offset : start_offset + 1] = req_embeds[idx : idx + 1]
-            update_dict = {out_key: code_predictor_codes_cpu[idx : idx + 1]}
+            update_dict = {out_key: code_predictor_codes[idx : idx + 1]}
             self._merge_additional_information_update(req_id, update_dict)
 
     def _model_forward(
@@ -1346,14 +1362,10 @@ class OmniGPUModelRunner(GPUModelRunner):
         req_state = self.requests.get(req_id)
         if req_state is None:
             return
-        gpu_keys = self._gpu_resident_buffer_keys
         existing = self.model_intermediate_buffer.setdefault(req_id, {})
         for k, v in upd.items():
             if isinstance(v, torch.Tensor):
-                if k in gpu_keys:
-                    existing[k] = v.detach().clone()
-                else:
-                    existing[k] = v.detach().to("cpu").contiguous()
+                existing[k] = v.detach().to("cpu").contiguous()
             elif isinstance(v, list):
                 existing[k] = [
                     (item.detach().to("cpu").contiguous() if isinstance(item, torch.Tensor) else item) for item in v
