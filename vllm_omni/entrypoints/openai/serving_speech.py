@@ -244,10 +244,12 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
     def _load_supported_speakers(self) -> set[str]:
         """Load supported speakers (case-insensitive) from the model configuration."""
         try:
-            if self._tts_model_type == "qwen3_tts":
-                config = self.engine_client.model_config.hf_config.talker_config
-            elif self._tts_model_type == "voxtral_tts":
+            if self._tts_model_type == "voxtral_tts":
                 config = self.engine_client.model_config.hf_config.audio_config
+            else:
+                # Default is qwen3_tts path
+                config = self.engine_client.model_config.hf_config.talker_config
+
             # Check for speakers in either spk_id or speaker_id
             for attr_name in ["spk_id", "speaker_id"]:
                 if isinstance(config, dict):
