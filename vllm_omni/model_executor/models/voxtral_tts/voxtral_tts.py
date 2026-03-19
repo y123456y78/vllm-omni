@@ -250,7 +250,8 @@ class VoxtralTTSForConditionalGeneration(
             return hidden_states
 
         if self.model_stage == "audio_tokenizer":
-            if (input_ids == 0).all():  # Sample run
+            if (input_ids == 0).all():
+                logger.info("audio_tokenizer: sample run with dummy input")
                 # TODO(chenyo): Move this to dummy_inputs creation
                 num_codebooks = self.audio_tokenizer.num_codebooks
                 audio_tokens = torch.randint(low=2, high=100, size=(116, num_codebooks), dtype=torch.int32)
