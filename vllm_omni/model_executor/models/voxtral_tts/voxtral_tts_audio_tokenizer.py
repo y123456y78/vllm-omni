@@ -1035,7 +1035,7 @@ class VoxtralTTSAudioTokenizer(nn.Module):
         emb = self.quantizer.decode(codes, dtype)  # (b, k, t)
         return self._forward_decoder(emb)
 
-    def decode_helper_batch(self, codes_list: list[torch.Tensor]) -> list[torch.Tensor]:
+    def decode_helper_batch_async(self, codes_list: list[torch.Tensor]) -> list[torch.Tensor]:
         """Batch decode a list of code tensors to reconstructed audio.
 
         Args:

@@ -256,7 +256,7 @@ class VoxtralTTSForConditionalGeneration(
                 audio_tokens = torch.randint(low=2, high=100, size=(116, num_codebooks), dtype=torch.int32)
                 audio_tokens[-1, :] = 0
                 audio_tokens[-1, 0] = 1
-                batch_audio_arrays = self.audio_tokenizer.decode_helper_batch([audio_tokens])
+                batch_audio_arrays = self.audio_tokenizer.decode_helper_batch_async([audio_tokens])
                 return OmniOutput(
                     text_hidden_states=None,
                     multimodal_outputs={"audio": batch_audio_arrays},
@@ -266,7 +266,7 @@ class VoxtralTTSForConditionalGeneration(
             )
 
             # Batch decode all requests at once
-            batch_audio_arrays_raw = self.audio_tokenizer.decode_helper_batch(all_audio_tokens)
+            batch_audio_arrays_raw = self.audio_tokenizer.decode_helper_batch_async(all_audio_tokens)
             batch_audio_arrays = apply_ctx_frames_cutting(
                 batch_audio_arrays_raw, all_ctx_frames, self.audio_tokenizer.downsample_factor
             )
