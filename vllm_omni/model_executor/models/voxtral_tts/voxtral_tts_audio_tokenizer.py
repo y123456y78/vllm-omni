@@ -20,6 +20,7 @@ from vllm_omni.model_executor.models.voxtral_tts.voxtral_tts_audio_generation im
 
 try:
     from flash_attn import flash_attn_func
+
     HAS_FLASH_ATTN = True
 except ImportError:
     flash_attn_func = None

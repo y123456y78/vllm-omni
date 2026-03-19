@@ -1241,11 +1241,7 @@ def omni_server(request: pytest.FixtureRequest, run_level: str, model_prefix: st
             _stage_ids = [s["stage_id"] for s in _cfg.get("stage_args", []) if "stage_id" in s]
             stage_config_path = modify_stage_config(
                 stage_config_path,
-                deletes={
-                    "stage_args": {
-                        sid: ["engine_args.load_format"] for sid in _stage_ids
-                    }
-                },
+                deletes={"stage_args": {sid: ["engine_args.load_format"] for sid in _stage_ids}},
             )
 
         server_args = params.server_args or []

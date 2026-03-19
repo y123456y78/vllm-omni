@@ -1,10 +1,13 @@
 from typing import Any
 
 import torch
-from vllm.logger import init_logger
-from vllm_omni.inputs.data import OmniTokensPrompt
 from vllm.inputs import TextPrompt
+from vllm.logger import init_logger
+
+from vllm_omni.inputs.data import OmniTokensPrompt
+
 logger = init_logger(__name__)
+
 
 def generator2tokenizer(
     stage_list,
@@ -34,6 +37,7 @@ def generator2tokenizer(
         )
 
     return tokenizer_inputs
+
 
 def _extract_last_frame(pooling_output: dict[str, Any]) -> torch.Tensor | None:
     audio = pooling_output.get("audio")

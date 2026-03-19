@@ -33,7 +33,6 @@ def _make_output(audio_tensors):
 
 
 class TestGenerator2Tokenizer:
-
     def test_single_output_single_chunk(self):
         """Single output with one audio tensor produces correct prompt_token_ids."""
         audio = torch.tensor([10, 20, 30, 40])
@@ -71,6 +70,7 @@ class TestGenerator2Tokenizer:
         stage = _make_stage(engine_outputs=None)
         with pytest.raises(RuntimeError, match="no outputs yet"):
             generator2tokenizer([stage], engine_input_source=[0])
+
 
 # ---- Helpers for generator2tokenizer_async_chunk (streaming) ----
 

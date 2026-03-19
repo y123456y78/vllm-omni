@@ -539,7 +539,9 @@ class FlowMatchingAudioTransformer(nn.Module):
             t_emb_batched = torch.cat([t_emb, t_emb], dim=0)
 
             v_all = self._predict_velocity(
-                x_t=x_batched, llm_output=llm_batched, t_emb=t_emb_batched,
+                x_t=x_batched,
+                llm_output=llm_batched,
+                t_emb=t_emb_batched,
             )
             v_t, uncond_v_t = v_all[:B], v_all[B:]
             v_t = self._cfg_alpha * v_t + (1 - self._cfg_alpha) * uncond_v_t
@@ -603,6 +605,7 @@ class FlowMatchingAudioTransformer(nn.Module):
             dim=1,
         )
         return audio_codes
+
 
 class VoxtralTTSProcessorAdapter:
     """

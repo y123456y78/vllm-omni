@@ -19,11 +19,11 @@ def _register_omni_hf_configs() -> None:
         from transformers import AutoConfig
 
         from vllm_omni.model_executor.models.cosyvoice3.config import CosyVoice3Config
-        from vllm_omni.model_executor.models.voxtral_tts.configuration_voxtral_tts import (
-            VoxtralTTSConfig,
-        )
         from vllm_omni.model_executor.models.qwen3_tts.configuration_qwen3_tts import (
             Qwen3TTSConfig,
+        )
+        from vllm_omni.model_executor.models.voxtral_tts.configuration_voxtral_tts import (
+            VoxtralTTSConfig,
         )
     except Exception as exc:  # pragma: no cover - best-effort optional registration
         logger.warning("Skipping omni HF config registration due to import error: %s", exc)
