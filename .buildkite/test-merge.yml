@@ -360,7 +360,7 @@ steps:
                   path: /mnt/hf-cache
                   type: DirectoryOrCreate
 
-  - label: "Voxtral TTS E2E Test"
+  - label: "Voxtral-TTS E2E Test"
     timeout_in_minutes: 20
     depends_on: upload-merge-pipeline
     commands:
