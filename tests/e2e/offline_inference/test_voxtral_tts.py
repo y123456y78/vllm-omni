@@ -188,8 +188,7 @@ def test_voxtral_tts_offline_streaming(run_level):
             audio_array = np.concatenate(all_audio_chunks)
 
             assert len(audio_array) > MIN_AUDIO_SAMPLES, (
-                f"Audio too short: {len(audio_array)} samples, "
-                f"expected > {MIN_AUDIO_SAMPLES}"
+                f"Audio too short: {len(audio_array)} samples, expected > {MIN_AUDIO_SAMPLES}"
             )
 
             # Verify audio isn't all zeros / silence
