@@ -37,30 +37,24 @@ from vllm_omni.entrypoints.omni import Omni
 
 MODEL = "mistralai/Voxtral-4B-TTS-2603"
 STAGE_CONFIG = str(
-    Path(__file__).parent.parent.parent.parent
-    / "vllm_omni"
-    / "model_executor"
-    / "stage_configs"
-    / "voxtral_tts.yaml"
+    Path(__file__).parent.parent.parent.parent / "vllm_omni" / "model_executor" / "stage_configs" / "voxtral_tts.yaml"
 )
 SAMPLE_RATE = 24000
 # Minimum expected audio samples for a short sentence (~0.04s of 24kHz audio)
 MIN_AUDIO_SAMPLES = 1000
 VOICE = "casual_female"
 TEST_TEXT = "Hello, how are you?"
+
+
 def _compose_request(model_name: str, text: str, voice: str) -> dict:
     """Build the TTS input dict using mistral tokenizer."""
     if Path(model_name).is_dir():
-        mistral_tokenizer = MistralTokenizer.from_file(
-            str(Path(model_name) / "tekken.json")
-        )
+        mistral_tokenizer = MistralTokenizer.from_file(str(Path(model_name) / "tekken.json"))
     else:
         mistral_tokenizer = MistralTokenizer.from_hf_hub(model_name)
     instruct_tokenizer = mistral_tokenizer.instruct_tokenizer
 
-    tokenized = instruct_tokenizer.encode_speech_request(
-        SpeechRequest(input=text, voice=voice)
-    )
+    tokenized = instruct_tokenizer.encode_speech_request(SpeechRequest(input=text, voice=voice))
     return {
         "prompt_token_ids": tokenized.tokens,
         "additional_information": {"voice": [voice]},
@@ -127,14 +121,11 @@ def test_voxtral_tts_offline_basic(run_level):
         audio_array = audio_tensor.float().cpu().numpy()
 
         assert len(audio_array) > MIN_AUDIO_SAMPLES, (
-            f"Audio too short: {len(audio_array)} samples, "
-            f"expected > {MIN_AUDIO_SAMPLES}"
+            f"Audio too short: {len(audio_array)} samples, expected > {MIN_AUDIO_SAMPLES}"
         )
 
         # Verify audio isn't all zeros / silence
-        assert np.max(np.abs(audio_array)) > 0.01, (
-            "Audio appears to be silence"
-        )
+        assert np.max(np.abs(audio_array)) > 0.01, "Audio appears to be silence"
 
     finally:
         omni.close()
@@ -180,14 +171,11 @@ def test_voxtral_tts_offline_streaming(run_level):
                     if finished:
                         # Last chunk may return whole audio instead of
                         # a delta — cut already-accumulated samples.
-                        audio_np = (audio_chunk[accumulated_samples:]
-                                    .float().detach().cpu().numpy())
+                        audio_np = audio_chunk[accumulated_samples:].float().detach().cpu().numpy()
                     else:
-                        audio_np = (audio_chunk
-                                    .float().detach().cpu().numpy())
+                        audio_np = audio_chunk.float().detach().cpu().numpy()
                 elif isinstance(audio_chunk, list):
-                    audio_np = (audio_chunk[chunk_idx]
-                                .float().detach().cpu().numpy())
+                    audio_np = audio_chunk[chunk_idx].float().detach().cpu().numpy()
                 else:
                     audio_np = audio_chunk
 
@@ -195,9 +183,7 @@ def test_voxtral_tts_offline_streaming(run_level):
                 all_audio_chunks.append(audio_np)
                 chunk_idx += 1
 
-            assert len(all_audio_chunks) > 0, (
-                "No audio chunks received from streaming"
-            )
+            assert len(all_audio_chunks) > 0, "No audio chunks received from streaming"
 
             audio_array = np.concatenate(all_audio_chunks)
 
@@ -207,9 +193,7 @@ def test_voxtral_tts_offline_streaming(run_level):
             )
 
             # Verify audio isn't all zeros / silence
-            assert np.max(np.abs(audio_array)) > 0.01, (
-                "Audio appears to be silence"
-            )
+            assert np.max(np.abs(audio_array)) > 0.01, "Audio appears to be silence"
 
         finally:
             async_omni.shutdown()
