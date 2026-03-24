@@ -197,27 +197,11 @@ def fetch_voices_and_languages(base_url: str, model: str) -> tuple[list[str], di
 
 
 def make_update_voice_dropdown(language_voices: dict[str, list[str]]):
-    """Create a closure for updating voice dropdown with language_voices.
-
-    Args:
-        language_voices: Dictionary mapping language to list of voices
-
-    Returns:
-        Function that takes language and returns updated Dropdown component
-    """
+    """Return a callback that updates the voice dropdown when the user
+    selects a different language."""
     def update_voice_dropdown(language: str) -> gr.Dropdown:
-        """Update the voice dropdown based on selected language.
-
-        Args:
-            language: Selected language category
-
-        Returns:
-            Updated Dropdown component with voices for the selected language
-        """
-        if language in language_voices:
-            voices = language_voices[language]
-            return gr.Dropdown(choices=voices, value=voices[0] if voices else None, interactive=True)
-        return gr.Dropdown(choices=[], value=None, interactive=True)
+        voices = language_voices.get(language, [])
+        return gr.Dropdown(choices=voices, value=voices[0] if voices else None, interactive=True)
     return update_voice_dropdown
 
 
