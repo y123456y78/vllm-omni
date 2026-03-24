@@ -146,9 +146,7 @@ def wait_for_server(base_url: str, timeout: float = _SERVER_CHECK_TIMEOUT) -> bo
             except Exception:
                 pass
             elapsed = time.time() - start_time
-            logger.info(
-                f"Server not yet available ({elapsed:.1f}s elapsed), retrying in {_SERVER_CHECK_INTERVAL}s..."
-            )
+            logger.info(f"Server not yet available ({elapsed:.1f}s elapsed), retrying in {_SERVER_CHECK_INTERVAL}s...")
             time.sleep(_SERVER_CHECK_INTERVAL)
 
     logger.warning(f"Server did not become available within {timeout}s timeout")
