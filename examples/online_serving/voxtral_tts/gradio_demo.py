@@ -116,9 +116,11 @@ def organize_voices_by_language(voices: list[str]) -> tuple[list[str], dict[str,
 
     return sorted_languages, language_voices
 
+
 # Configuration for server health check
 _SERVER_CHECK_TIMEOUT = 300.0  # 5 minutes max wait
 _SERVER_CHECK_INTERVAL = 5.0  # 5 seconds between retries
+
 
 def wait_for_server(base_url: str, timeout: float = _SERVER_CHECK_TIMEOUT) -> bool:
     """Block until the server is available or timeout is reached.
