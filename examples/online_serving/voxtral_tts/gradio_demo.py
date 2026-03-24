@@ -104,9 +104,12 @@ def organize_voices_by_language(voices: list[str]) -> tuple[list[str], dict[str,
                 language_voices["English"] = []
             language_voices["English"].append(voice)
 
-    # Sort voices within each language category
+    # Sort voices within each language category, with neutral_male first for English
     for lang in language_voices:
-        language_voices[lang].sort()
+        if lang == "English":
+            language_voices[lang].sort(key=lambda v: (0 if v == "neutral_male" else 1, v))
+        else:
+            language_voices[lang].sort()
 
     # Sort language categories (English first, then alphabetically)
     sorted_languages = sorted(
