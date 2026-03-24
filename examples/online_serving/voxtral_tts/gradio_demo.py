@@ -112,17 +112,13 @@ def organize_voices_by_language(voices: list[str]) -> tuple[list[str], dict[str,
             language_voices[lang].sort()
 
     # Sort language categories (English first, then alphabetically)
-    sorted_languages = sorted(
-        language_voices.keys(),
-        key=lambda x: (0 if x == "English" else 1, x.lower())
-    )
+    sorted_languages = sorted(language_voices.keys(), key=lambda x: (0 if x == "English" else 1, x.lower()))
 
     return sorted_languages, language_voices
 
 # Configuration for server health check
 _SERVER_CHECK_TIMEOUT = 300.0  # 5 minutes max wait
-_SERVER_CHECK_INTERVAL = 5.0   # 5 seconds between retries
-
+_SERVER_CHECK_INTERVAL = 5.0  # 5 seconds between retries
 
 def wait_for_server(base_url: str, timeout: float = _SERVER_CHECK_TIMEOUT) -> bool:
     """Block until the server is available or timeout is reached.
@@ -149,7 +145,9 @@ def wait_for_server(base_url: str, timeout: float = _SERVER_CHECK_TIMEOUT) -> bo
                     return True
             except Exception:
                 elapsed = time.time() - start_time
-                logger.info(f"Server not yet available ({elapsed:.1f}s elapsed), retrying in {_SERVER_CHECK_INTERVAL}s...")
+                logger.info(
+                    f"Server not yet available ({elapsed:.1f}s elapsed), retrying in {_SERVER_CHECK_INTERVAL}s..."
+                )
                 time.sleep(_SERVER_CHECK_INTERVAL)
 
     logger.warning(f"Server did not become available within {timeout}s timeout")
@@ -202,9 +200,11 @@ def fetch_voices_and_languages(base_url: str, model: str) -> tuple[list[str], di
 def make_update_voice_dropdown(language_voices: dict[str, list[str]]):
     """Return a callback that updates the voice dropdown when the user
     selects a different language."""
+
     def update_voice_dropdown(language: str) -> gr.Dropdown:
         voices = language_voices.get(language, [])
         return gr.Dropdown(choices=voices, value=voices[0] if voices else None, interactive=True)
+
     return update_voice_dropdown
 
 
@@ -279,6 +279,9 @@ def _load_from_share(
     Returns: (language, voice_name, text_prompt, output_audio, submit_btn_update, share_link_text)
     """
     fallback_language = "English" if languages and "English" in languages else (languages[0] if languages else "English")
+    fallback_language = (
+        "English" if languages and "English" in languages else (languages[0] if languages else "English")
+    )
     if language_voices:
         voices_list = language_voices.get(fallback_language, [])
         fallback_voice = voices_list[0] if voices_list else None
@@ -439,6 +442,7 @@ def main(
                     gr.update(interactive=False),  # submit_btn
                     "",  # share_link_box
                 )
+
             return _on_reset
 
         reset_btn.click(
@@ -450,6 +454,7 @@ def main(
         def make_load_from_share(outputs_dir: Path | None, languages: list[str], language_voices: dict[str, list[str]]):
             def _load(request: gr.Request):
                 return _load_from_share(outputs_dir, request, languages, language_voices)
+
             return _load
 
         demo.load(
