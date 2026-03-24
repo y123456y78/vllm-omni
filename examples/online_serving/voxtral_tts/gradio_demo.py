@@ -278,7 +278,6 @@ def _load_from_share(
     Called on page load. If ?share_id=... is present, load stored example.
     Returns: (language, voice_name, text_prompt, output_audio, submit_btn_update, share_link_text)
     """
-    fallback_language = "English" if languages and "English" in languages else (languages[0] if languages else "English")
     fallback_language = (
         "English" if languages and "English" in languages else (languages[0] if languages else "English")
     )
