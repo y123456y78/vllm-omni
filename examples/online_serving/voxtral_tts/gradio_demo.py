@@ -196,26 +196,6 @@ def fetch_voices_and_languages(base_url: str, model: str) -> tuple[list[str], di
     return languages, language_voices
 
 
-def fetch_voices(base_url: str, model: str) -> list[str]:
-    """Fetch available voices from the server API (backwards compatible).
-
-    This function blocks until the server is available, then fetches the list
-    of available voices from the /v1/audio/voices endpoint.
-
-    Args:
-        base_url: Base URL of the server API (e.g., "http://localhost:8091/v1")
-        model: Model name (used for logging)
-
-    Returns:
-        List of available voice names, or fallback list if server unavailable
-    """
-    languages, language_voices = fetch_voices_and_languages(base_url, model)
-    all_voices = []
-    for lang in languages:
-        all_voices.extend(language_voices.get(lang, []))
-    return all_voices
-
-
 def make_update_voice_dropdown(language_voices: dict[str, list[str]]):
     """Create a closure for updating voice dropdown with language_voices.
 
@@ -311,8 +291,8 @@ def _load_from_share(
     Called on page load. If ?share_id=... is present, load stored example.
     Returns: (language, voice_name, text_prompt, output_audio, submit_btn_update, share_link_text)
     """
-    fallback_language = languages[0] if languages else "English"
-    if language_voices and fallback_language:
+    fallback_language = "English" if languages and "English" in languages else (languages[0] if languages else "English")
+    if language_voices:
         voices_list = language_voices.get(fallback_language, [])
         fallback_voice = voices_list[0] if voices_list else None
     else:
@@ -381,13 +361,14 @@ def main(
         with gr.Row():
             with gr.Column():
                 # Language dropdown (first level)
+                default_language = "English" if "English" in languages else languages[0]
                 language_dropdown = gr.Dropdown(
                     choices=languages,
                     label="Language",
-                    value=languages[0] if languages else "English",
+                    value=default_language,
                 )
                 # Voice dropdown (second level, updates based on language)
-                voices_for_default_lang = language_voices.get(languages[0], []) if languages else []
+                voices_for_default_lang = language_voices.get(default_language, [])
                 voice_name = gr.Dropdown(
                     choices=voices_for_default_lang,
                     label="Voice",
@@ -460,12 +441,9 @@ def main(
         # --- Clear everything and disable submit again ---
         def make_on_reset(languages: list[str], language_voices: dict[str, list[str]]):
             def _on_reset():
-                language = languages[0] if languages else "English"
-                if language_voices and language:
-                    voices_list = language_voices.get(language, [])
-                    voice = voices_list[0] if voices_list else None
-                else:
-                    voice = None
+                language = "English" if "English" in languages else languages[0]
+                voices_list = language_voices.get(language, [])
+                voice = voices_list[0] if voices_list else None
                 return (
                     language,  # language_dropdown
                     voice,  # voice_name
