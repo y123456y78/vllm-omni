@@ -283,6 +283,18 @@ class VoxtralTTSForConditionalGeneration(
                 multimodal_outputs={"audio": batch_audio_arrays},
             )
 
+    def _extract_cfg_alpha(self, **kwargs) -> torch.Tensor:
+        """Extract per-request cfg_alpha from sampling_metadata.temperature.
+        VoxtralTTS repurposes the ``temperature`` sampling parameter as cfg.
+        """
+        sampling_metadata = kwargs.get("sampling_metadata")
+        if sampling_metadata is None or sampling_metadata.temperature is None:
+            raise ValueError(
+                "VoxtralTTS requires a non-zero 'temperature' sampling parameter "
+                "(used as cfg_alpha for flow-matching)."
+            )
+        return sampling_metadata.temperature
+
     def make_omni_output(
         self, model_outputs: torch.Tensor | OmniOutput | tuple, logits_index: int | None = None, **kwargs
     ) -> OmniOutput:
@@ -291,10 +303,16 @@ class VoxtralTTSForConditionalGeneration(
                 hidden_states = model_outputs
                 assert logits_index is not None
                 input_hidden_states = hidden_states[logits_index]
+                cfg_alpha = self._extract_cfg_alpha(**kwargs)
                 if self._cudagraph_acoustic_transformer is not None:
-                    fake_eos, multimodal_outputs = self._cudagraph_acoustic_transformer(input_hidden_states)
+                    # TODO: use per-request cfg_alpha in CUDA graph replay
+                    fake_eos, multimodal_outputs = self._cudagraph_acoustic_transformer(
+                        input_hidden_states, cfg_alpha=cfg_alpha
+                    )
                 else:
-                    fake_eos, multimodal_outputs = self.model.compute_mm_logits(input_hidden_states)
+                    fake_eos, multimodal_outputs = self.model.compute_mm_logits(
+                        input_hidden_states, cfg_alpha=cfg_alpha
+                    )
                 hidden_states[logits_index, 0] = fake_eos
                 return OmniOutput(
                     text_hidden_states=hidden_states,

@@ -47,6 +47,8 @@ class CUDAGraphAcousticTransformerWrapper:
         self.n_acoustic_codebook = self.acoustic_transformer.model_args.n_acoustic_codebook
         self.acoustic_embeddings_levels = self.acoustic_transformer.acoustic_embeddings_levels
 
+        # TODO(@chenyo): support per-request cfg_alpha from sampling_metadata.temperature
+        # (see FlowMatchingAudioTransformer.decode_one_frame for the eager path)
         self.cfg_alpha = 1.2
         self.n_steps = 8
 
@@ -217,6 +219,7 @@ class CUDAGraphAcousticTransformerWrapper:
     def __call__(
         self,
         hidden_states: torch.Tensor,
+        cfg_alpha: torch.Tensor,
     ) -> tuple[torch.Tensor, dict[str, list[torch.Tensor]] | None]:
         """
         Drop-in replacement for model.compute_mm_logits().
@@ -228,11 +231,11 @@ class CUDAGraphAcousticTransformerWrapper:
         actual_size = hidden_states.shape[0]
 
         if not self.enabled or not self._warmed_up:
-            return self.model.compute_mm_logits(hidden_states)
+            return self.model.compute_mm_logits(hidden_states, cfg_alpha=cfg_alpha)
 
         padded_size = self._get_padded_size(actual_size)
         if padded_size is None or padded_size not in self.graphs:
-            return self.model.compute_mm_logits(hidden_states)
+            return self.model.compute_mm_logits(hidden_states, cfg_alpha=cfg_alpha)
 
         # Zero static input, then copy actual data
         self.static_inputs[padded_size].zero_()

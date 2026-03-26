@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 
 # ---- Streaming version ----
-async def run_streaming(inputs, sampling_params_list, model_name, args, output_dir):
+async def run_streaming(inputs, per_request_sampling_params, model_name, args, output_dir):
     async_omni = AsyncOmni(
         model=model_name,
         stage_configs_path=args.stage_configs_path,
@@ -69,8 +69,9 @@ async def run_streaming(inputs, sampling_params_list, model_name, args, output_d
         ttfa = None
         accumulated_sample = 0
 
+        req_sampling_params_list = per_request_sampling_params[batch_idx]
         async for stage_output in async_omni.generate(
-            single_input, request_id=request_id, sampling_params_list=sampling_params_list
+            single_input, request_id=request_id, sampling_params_list=req_sampling_params_list
         ):
             mm_output = stage_output.multimodal_output
             finished = stage_output.finished
@@ -348,30 +349,52 @@ def main(args: Any) -> None:
 
     inputs = compose_request(model_name, text_chunk, audio_prompt_file, args)
 
-    sampling_params = SamplingParams(
-        max_tokens=max_num_tokens,
-    )
-    sampling_params_list = [
-        sampling_params,
-        sampling_params,
-    ]
+    # Parse per-request cfg_alpha values (comma-separated).
+    # Stage-0 'temperature' is repurposed as the CFG alpha for the
+    # flow-matching acoustic transformer (does not affect text sampling).
+    cfg_alpha_values: list[float] = []
+    if args.cfg_alpha is not None:
+        cfg_alpha_values = [float(v.strip()) for v in args.cfg_alpha.split(",")]
+        print(f"cfg_alpha values: {cfg_alpha_values}")
 
-    if args.num_prompts > 1:
-        inputs = [inputs] * args.num_prompts
+    assert len(cfg_alpha_values) == args.num_prompts, "cfg_alpha count != num_prompts"
+    num_prompts = args.num_prompts
+
+    stage1_sampling_params = SamplingParams(max_tokens=max_num_tokens)
+
+    # Build per-request sampling_params_list (one [stage0, stage1] pair per request)
+    per_request_sampling_params: list[list[SamplingParams]] = []
+    for i in range(num_prompts):
+        stage0_kwargs: dict[str, Any] = {"max_tokens": max_num_tokens}
+        if cfg_alpha_values:
+            alpha = cfg_alpha_values[i]
+            stage0_kwargs["temperature"] = alpha
+        per_request_sampling_params.append([
+            SamplingParams(**stage0_kwargs),
+            stage1_sampling_params,
+        ])
+
+    if num_prompts > 1:
+        inputs = [inputs] * num_prompts
 
     if args.concurrency is not None:
         assert args.streaming, "--concurrency must be used with --streaming on AsyncOmni"
-        assert args.num_prompts % args.concurrency == 0, (
-            f"--num-prompts ({args.num_prompts}) must be divisible by --concurrency ({args.concurrency})"
+        assert num_prompts % args.concurrency == 0, (
+            f"--num-prompts ({num_prompts}) must be divisible by --concurrency ({args.concurrency})"
         )
 
     torch.cuda.empty_cache()
     gc.collect()
 
     if args.streaming:
-        asyncio.run(run_streaming(inputs, sampling_params_list, model_name, args, output_dir))
+        asyncio.run(run_streaming(inputs, per_request_sampling_params, model_name, args, output_dir))
     else:
-        run_non_streaming(inputs, sampling_params_list, model_name, args, output_dir)
+        # Non-streaming API shares one sampling_params_list for all requests;
+        # use the first request's params.
+        if len(cfg_alpha_values) > 1:
+            print("WARNING: non-streaming mode uses a single cfg_alpha for all "
+                  f"requests; using first value ({cfg_alpha_values[0]})")
+        run_non_streaming(inputs, per_request_sampling_params[0], model_name, args, output_dir)
 
 
 if __name__ == "__main__":

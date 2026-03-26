@@ -31,7 +31,8 @@ stage_args:
     final_output: false
     final_output_type: text
     default_sampling_params:
-      temperature: 0.0
+      # NOTE: VoxtralTTS repurposes 'temperature' as the CFG alpha
+      temperature: 1.2
       top_p: 1.0
       top_k: -1
       max_tokens: 2048
