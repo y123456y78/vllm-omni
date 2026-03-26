@@ -305,7 +305,6 @@ class VoxtralTTSForConditionalGeneration(
                 input_hidden_states = hidden_states[logits_index]
                 cfg_alpha = self._extract_cfg_alpha(**kwargs)
                 if self._cudagraph_acoustic_transformer is not None:
-                    # TODO: use per-request cfg_alpha in CUDA graph replay
                     fake_eos, multimodal_outputs = self._cudagraph_acoustic_transformer(
                         input_hidden_states, cfg_alpha=cfg_alpha
                     )
