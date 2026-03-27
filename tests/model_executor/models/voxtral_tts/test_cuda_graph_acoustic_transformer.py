@@ -129,8 +129,7 @@ class SyntheticModel(nn.Module):
     def compute_mm_logits(
         self,
         hidden_states: torch.Tensor,
-        cfg_alpha: torch.Tensor | None = None,
-        mm_sampling_tensors=None,
+        cfg_alpha: torch.Tensor,
     ):
         """Eager fallback path: replicate what the wrapper does."""
         at = self.acoustic_transformer
@@ -153,10 +152,7 @@ class SyntheticModel(nn.Module):
         timesteps = torch.linspace(0, 1, 16, device=hidden_states.device, dtype=hidden_states.dtype)
 
         # Use passed cfg_alpha or default to 1.2
-        if cfg_alpha is None:
-            alpha = torch.full((B,), 1.2, device=hidden_states.device, dtype=hidden_states.dtype)
-        else:
-            alpha = cfg_alpha.to(hidden_states.dtype)
+        alpha = cfg_alpha.to(hidden_states.dtype)
 
         for i in range(len(timesteps) - 1):
             t = timesteps[i]
