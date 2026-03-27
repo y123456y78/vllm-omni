@@ -350,6 +350,7 @@ def main(args: Any) -> None:
 
     sampling_params = SamplingParams(
         max_tokens=max_num_tokens,
+        temperature=1.2,
     )
     sampling_params_list = [
         sampling_params,
