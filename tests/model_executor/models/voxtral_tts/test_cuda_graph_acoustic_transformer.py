@@ -146,6 +146,7 @@ class SyntheticModel(nn.Module):
         sampled = torch.randn(
             B, at.model_args.n_acoustic_codebook, device=hidden_states.device, dtype=hidden_states.dtype
         )
+        llm_hidden_zero = torch.zeros_like(hidden_states)
         timesteps = torch.linspace(0, 1, 16, device=hidden_states.device, dtype=hidden_states.dtype)
 
         # Reshape cfg_alpha for broadcasting: (B,) -> (B, 1)
