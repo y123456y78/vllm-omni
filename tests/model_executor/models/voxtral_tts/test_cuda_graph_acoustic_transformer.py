@@ -121,8 +121,10 @@ class SyntheticModel(nn.Module):
     def __init__(self):
         super().__init__()
         self.acoustic_transformer = SyntheticAcousticTransformer()
-        self._end_audio_token_id = AudioSpecialTokens.id(AudioSpecialTokens.end_audio)
-        self._empty_audio_token_id = AudioSpecialTokens.id(AudioSpecialTokens.empty_audio)
+        end_audio_id = AudioSpecialTokens.id(AudioSpecialTokens.end_audio)
+        empty_audio_id = AudioSpecialTokens.id(AudioSpecialTokens.empty_audio)
+        self.end_audio_id = end_audio_id
+        self.empty_audio_id = empty_audio_id
 
     def compute_mm_logits(
         self,
