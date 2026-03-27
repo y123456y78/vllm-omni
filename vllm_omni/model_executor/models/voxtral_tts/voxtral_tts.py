@@ -290,8 +290,7 @@ class VoxtralTTSForConditionalGeneration(
         sampling_metadata = kwargs.get("sampling_metadata")
         if sampling_metadata is None or sampling_metadata.temperature is None:
             raise ValueError(
-                "VoxtralTTS requires a non-zero 'temperature' sampling parameter "
-                "(used as cfg_alpha for flow-matching)."
+                "VoxtralTTS requires a non-zero 'temperature' sampling parameter (used as cfg_alpha for flow-matching)."
             )
         return sampling_metadata.temperature
 

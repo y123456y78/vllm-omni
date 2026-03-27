@@ -136,15 +136,16 @@ class SyntheticModel(nn.Module):
         # Semantic logits
         semantic_logit = at.semantic_codebook_output(hidden_states).float()
         semantic_logit[:, self._empty_audio_token_id] = -float("inf")
-        semantic_logit[:, len(AudioSpecialTokens) + at.model_args.semantic_codebook_size:] = -float("inf")
+        semantic_logit[:, len(AudioSpecialTokens) + at.model_args.semantic_codebook_size :] = -float("inf")
 
         # semantic_logit: Bx1
         semantic_code = semantic_logit.argmax(dim=-1, keepdim=True)
 
         # Flow matching Euler ODE
         should_decode = semantic_code.squeeze(1) != self._end_audio_token_id
-        sampled = torch.randn(B, at.model_args.n_acoustic_codebook, device=hidden_states.device, dtype=hidden_states.dtype)
-        llm_hidden_zero = torch.zeros_like(hidden_states)
+        sampled = torch.randn(
+            B, at.model_args.n_acoustic_codebook, device=hidden_states.device, dtype=hidden_states.dtype
+        )
         timesteps = torch.linspace(0, 1, 16, device=hidden_states.device, dtype=hidden_states.dtype)
 
         # Reshape cfg_alpha for broadcasting: (B,) -> (B, 1)
@@ -347,9 +348,7 @@ def test_different_cfg_alpha_produces_different_output(model, wrapper):
         _, codes_low = _unpack_audio_codes(wrapper(hidden, _cfg_alpha(batch_size, 1.0)))
         torch.manual_seed(400)
         _, codes_high = _unpack_audio_codes(wrapper(hidden, _cfg_alpha(batch_size, 1.6)))
-    assert not torch.equal(codes_low, codes_high), (
-        "Expected different audio codes for cfg_alpha=1.0 vs cfg_alpha=1.6"
-    )
+    assert not torch.equal(codes_low, codes_high), "Expected different audio codes for cfg_alpha=1.0 vs cfg_alpha=1.6"
 
 
 def test_cfg_alpha_eager_graph_consistency(model, wrapper):
