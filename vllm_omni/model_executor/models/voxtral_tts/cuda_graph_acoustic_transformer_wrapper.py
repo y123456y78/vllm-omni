@@ -80,8 +80,9 @@ class CUDAGraphAcousticTransformerWrapper:
         for size in self.capture_sizes:
             dummy = torch.zeros(size, hidden_dim, device=device, dtype=dtype)
             dummy_cfg_alpha = torch.full((size, 1), 1.2, device=device, dtype=dtype)
+            dummy_noise = torch.randn(size, self.n_acoustic_codebook, device=device, dtype=dtype)
             with torch.no_grad():
-                self._forward_cudagraph_compatible(dummy, cfg_alpha=dummy_cfg_alpha)
+                self._forward_cudagraph_compatible(dummy, cfg_alpha=dummy_cfg_alpha, noise=dummy_noise)
 
         torch.cuda.synchronize(device)
 
@@ -109,7 +110,7 @@ class CUDAGraphAcousticTransformerWrapper:
         self,
         hidden_states: torch.Tensor,
         cfg_alpha: torch.Tensor,
-        noise: torch.Tensor | None = None,
+        noise: torch.Tensor,
     ):
         """
         The actual computation captured by the CUDA graph.
@@ -138,16 +139,10 @@ class CUDAGraphAcousticTransformerWrapper:
         # --- Flow matching: Euler ODE ---
         should_decode = semantic_code.squeeze(1) != self.end_audio_token_id
 
-        if noise is not None:
-            x = noise
-        else:
-            x = torch.randn(B, self.n_acoustic_codebook, device=hidden_states.device, dtype=hidden_states.dtype)
+        x = noise
 
         # Pre-compute zero hidden states for unconditional CFG branch
         hidden_states_zero = torch.zeros_like(hidden_states)
-
-        # cfg_alpha: (B, 1) for broadcasting with (B, C)
-        cfg_alpha = cfg_alpha.to(dtype=hidden_states.dtype)
 
         timesteps = self.timesteps
         for i in range(len(timesteps) - 1):

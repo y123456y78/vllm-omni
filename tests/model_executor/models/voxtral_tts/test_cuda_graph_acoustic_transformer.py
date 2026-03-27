@@ -149,8 +149,7 @@ class SyntheticModel(nn.Module):
 
         # Reshape cfg_alpha for broadcasting: (B,) -> (B, 1)
         cfg_alpha = cfg_alpha.to(dtype=hidden_states.dtype)
-        if cfg_alpha.dim() == 1:
-            cfg_alpha = cfg_alpha.unsqueeze(1)  # (B, 1) for broadcasting with (B, C)
+        cfg_alpha = cfg_alpha.unsqueeze(1)  # (B, 1) for broadcasting with (B, C)
 
         for i in range(len(timesteps) - 1):
             t = timesteps[i]
@@ -210,6 +209,10 @@ def _random_hidden(batch_size, device=DEVICE, dtype=torch.bfloat16):
 
 def _default_cfg_alpha(batch_size, device=DEVICE):
     return torch.full((batch_size,), 1.2, device=device, dtype=torch.float32)
+
+
+def _cfg_alpha(batch_size, value, device=DEVICE):
+    return torch.full((batch_size,), value, device=device, dtype=torch.float32)
 
 
 def _unpack_audio_codes(result):
@@ -332,3 +335,36 @@ def test_deterministic_across_calls(model, wrapper):
         eos2, codes2 = _unpack_audio_codes(wrapper(hidden, _default_cfg_alpha(4)))
     torch.testing.assert_close(eos1, eos2, atol=0, rtol=0)
     torch.testing.assert_close(codes1, codes2, atol=0, rtol=0)
+
+
+# ──────────────────────────────────────────────────────────────────
+# 6. cfg_alpha sensitivity
+# ──────────────────────────────────────────────────────────────────
+
+
+def test_different_cfg_alpha_produces_different_output(model, wrapper):
+    """Different cfg_alpha values with the same input and RNG seed produce different audio codes."""
+    batch_size = 4
+    hidden = _random_hidden(batch_size)
+    with torch.no_grad():
+        torch.manual_seed(400)
+        _, codes_low = _unpack_audio_codes(wrapper(hidden, _cfg_alpha(batch_size, 1.0)))
+        torch.manual_seed(400)
+        _, codes_high = _unpack_audio_codes(wrapper(hidden, _cfg_alpha(batch_size, 1.6)))
+    assert not torch.equal(codes_low, codes_high), (
+        "Expected different audio codes for cfg_alpha=1.0 vs cfg_alpha=1.6"
+    )
+
+
+def test_cfg_alpha_eager_graph_consistency(model, wrapper):
+    """Eager and graph paths produce identical results for a non-default cfg_alpha."""
+    batch_size = 48  # exceeds all capture sizes, forces eager fallback in wrapper
+    cfg = _cfg_alpha(batch_size, 1.5)
+    hidden = _random_hidden(batch_size)
+    with torch.no_grad():
+        torch.manual_seed(500)
+        eager_eos, eager_codes = _unpack_audio_codes(model.compute_mm_logits(hidden, cfg))
+        torch.manual_seed(500)
+        graph_eos, graph_codes = _unpack_audio_codes(wrapper(hidden, cfg))
+    torch.testing.assert_close(graph_eos, eager_eos, atol=0, rtol=0)
+    torch.testing.assert_close(graph_codes, eager_codes, atol=0, rtol=0)

@@ -526,8 +526,7 @@ class FlowMatchingAudioTransformer(nn.Module):
 
         # Reshape cfg_alpha for broadcasting: (B,) -> (B, 1)
         cfg_alpha = cfg_alpha.to(dtype=llm_hidden.dtype, device=llm_hidden.device)
-        if cfg_alpha.dim() == 1:
-            cfg_alpha = cfg_alpha.unsqueeze(1)  # (B, 1) for broadcasting with (B, C)
+        cfg_alpha = cfg_alpha.unsqueeze(1)  # (B, 1) for broadcasting with (B, C)
 
         # Euler integration with batched conditional + unconditional velocity
         sampled = x_0
