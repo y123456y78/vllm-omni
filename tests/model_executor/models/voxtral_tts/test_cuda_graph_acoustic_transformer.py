@@ -129,6 +129,7 @@ class SyntheticModel(nn.Module):
     def compute_mm_logits(
         self,
         hidden_states: torch.Tensor,
+        cfg_alpha: torch.Tensor | None = None,
         mm_sampling_tensors=None,
     ):
         """Eager fallback path: replicate what the wrapper does."""
@@ -151,6 +152,12 @@ class SyntheticModel(nn.Module):
         hidden_zero = torch.zeros_like(hidden_states)
         timesteps = torch.linspace(0, 1, 16, device=hidden_states.device, dtype=hidden_states.dtype)
 
+        # Use passed cfg_alpha or default to 1.2
+        if cfg_alpha is None:
+            alpha = torch.full((B,), 1.2, device=hidden_states.device, dtype=hidden_states.dtype)
+        else:
+            alpha = cfg_alpha.to(hidden_states.dtype)
+
         for i in range(len(timesteps) - 1):
             t = timesteps[i]
             dt = timesteps[i + 1] - timesteps[i]
@@ -160,8 +167,8 @@ class SyntheticModel(nn.Module):
             t_emb_batched = t_emb.repeat(2, 1)
             v_all = at._predict_velocity(x_t=x_batched, llm_output=llm_batched, t_emb=t_emb_batched)
             v_t, uncond_v_t = v_all[:B], v_all[B:]
-            cfg_alpha = 1.2
-            v_t = cfg_alpha * v_t + (1 - cfg_alpha) * uncond_v_t
+            a = alpha.unsqueeze(1)  # (B, 1) for broadcasting
+            v_t = a * v_t + (1 - a) * uncond_v_t
             x = x + v_t * dt
 
         sampled = torch.clamp(x, -1, 1)
@@ -208,6 +215,10 @@ def _random_hidden(batch_size, device=DEVICE, dtype=torch.bfloat16):
     return torch.randn(batch_size, HIDDEN_DIM, device=device, dtype=dtype)
 
 
+def _default_cfg_alpha(batch_size, device=DEVICE):
+    return torch.full((batch_size,), 1.2, device=device, dtype=torch.float32)
+
+
 def _unpack_audio_codes(result):
     """Unpack (fake_eos, {"audio": [list of tensors]}) into (fake_eos, audio_codes)."""
     fake_eos, mm_tokens = result
@@ -227,7 +238,7 @@ def test_exact_size_output_format(model, wrapper, batch_size):
     """Graph path returns correctly shaped and bounded outputs."""
     hidden = _random_hidden(batch_size)
     with torch.no_grad():
-        graph_eos, graph_codes = _unpack_audio_codes(wrapper(hidden))
+        graph_eos, graph_codes = _unpack_audio_codes(wrapper(hidden, _default_cfg_alpha(hidden.shape[0])))
     assert graph_eos.shape == (batch_size,)
     assert graph_codes.shape == (batch_size, 1 + N_ACOUSTIC_CODEBOOK)
     # fake_eos should be 0.0 or 1.0
@@ -242,9 +253,9 @@ def test_exact_size_deterministic(model, wrapper, batch_size):
     hidden = _random_hidden(batch_size)
     with torch.no_grad():
         torch.manual_seed(42)
-        eos1, codes1 = _unpack_audio_codes(wrapper(hidden))
+        eos1, codes1 = _unpack_audio_codes(wrapper(hidden, _default_cfg_alpha(batch_size)))
         torch.manual_seed(42)
-        eos2, codes2 = _unpack_audio_codes(wrapper(hidden))
+        eos2, codes2 = _unpack_audio_codes(wrapper(hidden, _default_cfg_alpha(batch_size)))
     torch.testing.assert_close(eos1, eos2, atol=0, rtol=0)
     torch.testing.assert_close(codes1, codes2, atol=0, rtol=0)
 
@@ -259,7 +270,7 @@ def test_padded_output_shape(model, wrapper, batch_size):
     """Padded decode must return output trimmed to actual batch size."""
     hidden = _random_hidden(batch_size)
     with torch.no_grad():
-        graph_eos, graph_codes = _unpack_audio_codes(wrapper(hidden))
+        graph_eos, graph_codes = _unpack_audio_codes(wrapper(hidden, _default_cfg_alpha(hidden.shape[0])))
     assert graph_eos.shape == (batch_size,)
     assert graph_codes.shape == (batch_size, 1 + N_ACOUSTIC_CODEBOOK)
 
@@ -269,7 +280,7 @@ def test_padded_output_bounded(model, wrapper, batch_size):
     """Padded output audio codes should be non-negative integers."""
     hidden = _random_hidden(batch_size)
     with torch.no_grad():
-        graph_eos, graph_codes = _unpack_audio_codes(wrapper(hidden))
+        graph_eos, graph_codes = _unpack_audio_codes(wrapper(hidden, _default_cfg_alpha(hidden.shape[0])))
     # fake_eos should be 0.0 or 1.0
     assert torch.all((graph_eos == 0.0) | (graph_eos == 1.0))
     # Audio codes should be non-negative
@@ -287,9 +298,9 @@ def test_fallback_eager_exact_match(model, wrapper, batch_size):
     hidden = _random_hidden(batch_size)
     with torch.no_grad():
         torch.manual_seed(100)
-        eager_eos, eager_codes = _unpack_audio_codes(model.compute_mm_logits(hidden))
+        eager_eos, eager_codes = _unpack_audio_codes(model.compute_mm_logits(hidden, _default_cfg_alpha(batch_size)))
         torch.manual_seed(100)
-        graph_eos, graph_codes = _unpack_audio_codes(wrapper(hidden))
+        graph_eos, graph_codes = _unpack_audio_codes(wrapper(hidden, _default_cfg_alpha(batch_size)))
     torch.testing.assert_close(graph_eos, eager_eos, atol=0, rtol=0)
     torch.testing.assert_close(graph_codes, eager_codes, atol=0, rtol=0)
 
@@ -305,9 +316,9 @@ def test_disabled_wrapper_matches_eager(model, wrapper):
     wrapper.enabled = False
     with torch.no_grad():
         torch.manual_seed(200)
-        eager_eos, eager_codes = _unpack_audio_codes(model.compute_mm_logits(hidden))
+        eager_eos, eager_codes = _unpack_audio_codes(model.compute_mm_logits(hidden, _default_cfg_alpha(4)))
         torch.manual_seed(200)
-        graph_eos, graph_codes = _unpack_audio_codes(wrapper(hidden))
+        graph_eos, graph_codes = _unpack_audio_codes(wrapper(hidden, _default_cfg_alpha(4)))
     wrapper.enabled = True
     torch.testing.assert_close(graph_eos, eager_eos, atol=0, rtol=0)
     torch.testing.assert_close(graph_codes, eager_codes, atol=0, rtol=0)
@@ -323,8 +334,8 @@ def test_deterministic_across_calls(model, wrapper):
     hidden = _random_hidden(4)
     with torch.no_grad():
         torch.manual_seed(300)
-        eos1, codes1 = _unpack_audio_codes(wrapper(hidden))
+        eos1, codes1 = _unpack_audio_codes(wrapper(hidden, _default_cfg_alpha(4)))
         torch.manual_seed(300)
-        eos2, codes2 = _unpack_audio_codes(wrapper(hidden))
+        eos2, codes2 = _unpack_audio_codes(wrapper(hidden, _default_cfg_alpha(4)))
     torch.testing.assert_close(eos1, eos2, atol=0, rtol=0)
     torch.testing.assert_close(codes1, codes2, atol=0, rtol=0)
