@@ -304,7 +304,7 @@ def parse_args() -> Namespace:
         default=None,
         help="Classifier-free guidance alpha for the flow-matching acoustic "
         "transformer (passed as 'temperature' on stage 0). Accepts a "
-        "comma-separated list for per-request values, e.g. '0.8,1.2,2.0'. "
+        "comma-separated list for per-request values, e.g. '1.1,1.2,1.3'. "
         "Values are cycled across requests. Default uses the stage config (1.2).",
     )
     return parser.parse_args()
