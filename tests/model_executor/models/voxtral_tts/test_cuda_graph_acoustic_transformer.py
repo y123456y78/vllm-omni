@@ -333,7 +333,7 @@ def test_deterministic_across_calls(model, wrapper):
     hidden = _random_hidden(4)
     with torch.no_grad():
         torch.manual_seed(300)
-        eos1, codes1 = _unpack_audio_codes(wrapper(hidden,  _cfg_alpha(4, 1.2)))
+        eos1, codes1 = _unpack_audio_codes(wrapper(hidden, _cfg_alpha(4, 1.2)))
         torch.manual_seed(300)
         eos2, codes2 = _unpack_audio_codes(wrapper(hidden, _cfg_alpha(4, 1.2)))
     torch.testing.assert_close(eos1, eos2, atol=0, rtol=0)
