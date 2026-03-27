@@ -121,10 +121,8 @@ class SyntheticModel(nn.Module):
     def __init__(self):
         super().__init__()
         self.acoustic_transformer = SyntheticAcousticTransformer()
-        end_audio_id = AudioSpecialTokens.id(AudioSpecialTokens.end_audio)
-        empty_audio_id = AudioSpecialTokens.id(AudioSpecialTokens.empty_audio)
-        self.end_audio_id = end_audio_id
-        self.empty_audio_id = empty_audio_id
+        self._end_audio_token_id = AudioSpecialTokens.id(AudioSpecialTokens.end_audio)
+        self._empty_audio_token_id = AudioSpecialTokens.id(AudioSpecialTokens.empty_audio)
 
     def compute_mm_logits(
         self,
@@ -135,47 +133,46 @@ class SyntheticModel(nn.Module):
         at = self.acoustic_transformer
         B = hidden_states.shape[0]
 
-        empty_audio_id = self.empty_audio_id
-        end_audio_id = self.end_audio_id
-        semantic_mask_start = len(AudioSpecialTokens) + at.model_args.semantic_codebook_size
-
         # Semantic logits
         semantic_logit = at.semantic_codebook_output(hidden_states).float()
-        semantic_logit[:, empty_audio_id] = -float("inf")
-        semantic_logit[:, semantic_mask_start:] = -float("inf")
+        semantic_logit[:, self._empty_audio_token_id] = -float("inf")
+        semantic_logit[:, len(AudioSpecialTokens) + at.model_args.semantic_codebook_size:] = -float("inf")
+
+        # semantic_logit: Bx1
         semantic_code = semantic_logit.argmax(dim=-1, keepdim=True)
 
         # Flow matching Euler ODE
-        should_decode = semantic_code.squeeze(1) != end_audio_id
-        x = torch.randn(B, at.model_args.n_acoustic_codebook, device=hidden_states.device, dtype=hidden_states.dtype)
-        hidden_zero = torch.zeros_like(hidden_states)
+        should_decode = semantic_code.squeeze(1) != self._end_audio_token_id
+        sampled = torch.randn(B, at.model_args.n_acoustic_codebook, device=hidden_states.device, dtype=hidden_states.dtype)
+        llm_hidden_zero = torch.zeros_like(hidden_states)
         timesteps = torch.linspace(0, 1, 16, device=hidden_states.device, dtype=hidden_states.dtype)
 
-        # Use passed cfg_alpha or default to 1.2
-        alpha = cfg_alpha.to(hidden_states.dtype)
+        # Reshape cfg_alpha for broadcasting: (B,) -> (B, 1)
+        cfg_alpha = cfg_alpha.to(dtype=hidden_states.dtype)
+        if cfg_alpha.dim() == 1:
+            cfg_alpha = cfg_alpha.unsqueeze(1)  # (B, 1) for broadcasting with (B, C)
 
         for i in range(len(timesteps) - 1):
             t = timesteps[i]
             dt = timesteps[i + 1] - timesteps[i]
             t_emb = at.time_embedding(t.view(-1, 1).repeat(B, 1)).to(hidden_states.dtype)
-            x_batched = torch.cat([x, x], dim=0)
-            llm_batched = torch.cat([hidden_states, hidden_zero], dim=0)
-            t_emb_batched = t_emb.repeat(2, 1)
+            x_batched = torch.cat([sampled, sampled], dim=0)
+            llm_batched = torch.cat([hidden_states, llm_hidden_zero], dim=0)
+            t_emb_batched = torch.cat([t_emb, t_emb], dim=0)
             v_all = at._predict_velocity(x_t=x_batched, llm_output=llm_batched, t_emb=t_emb_batched)
             v_t, uncond_v_t = v_all[:B], v_all[B:]
-            a = alpha.unsqueeze(1)  # (B, 1) for broadcasting
-            v_t = a * v_t + (1 - a) * uncond_v_t
-            x = x + v_t * dt
+            v_t = cfg_alpha * v_t + (1 - cfg_alpha) * uncond_v_t
+            sampled = sampled + v_t * dt
 
-        sampled = torch.clamp(x, -1, 1)
+        sampled = torch.clamp(sampled, -1, 1)
         scaled_x = ((sampled + 1) / 2) * (at.acoustic_embeddings_levels - 1)
         output_codes = scaled_x.round().long()
-        output_codes[~should_decode] = empty_audio_id
+        output_codes[~should_decode] = self._empty_audio_token_id
         acoustic_codes = output_codes + len(AudioSpecialTokens)
 
         audio_codes = torch.cat([semantic_code, acoustic_codes], dim=1)
         fake_eos = torch.where(
-            audio_codes[:, 0] == end_audio_id,
+            audio_codes[:, 0] == self._end_audio_token_id,
             torch.tensor(1.0, dtype=hidden_states.dtype, device=hidden_states.device),
             torch.tensor(0.0, dtype=hidden_states.dtype, device=hidden_states.device),
         )
