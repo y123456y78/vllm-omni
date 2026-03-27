@@ -1246,12 +1246,21 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
 
         sampling_params_list = self.engine_client.default_sampling_params_list
 
-        # Override Stage-0 max_tokens if caller specified max_new_tokens (Fish Speech).
+        # Override per-request sampling params when specified.
+        needs_copy = False
         if self._is_fish_speech and request.max_new_tokens is not None and sampling_params_list:
+            needs_copy = True
+        if request.temperature is not None and sampling_params_list:
+            needs_copy = True
+
+        if needs_copy:
             import copy
 
             sampling_params_list = copy.deepcopy(sampling_params_list)
-            sampling_params_list[0].max_tokens = request.max_new_tokens
+            if self._is_fish_speech and request.max_new_tokens is not None:
+                sampling_params_list[0].max_tokens = request.max_new_tokens
+            if request.temperature is not None:
+                sampling_params_list[0].temperature = request.temperature
 
         generator = self.engine_client.generate(
             prompt=prompt,

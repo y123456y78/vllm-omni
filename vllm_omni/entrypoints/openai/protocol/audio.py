@@ -70,6 +70,10 @@ class OpenAICreateSpeechRequest(BaseModel):
         ge=0,
         description="Per-request initial chunk size override. If null, computed dynamically based on server load.",
     )
+    temperature: float | None = Field(
+        default=None,
+        description="Sampling temperature. For VoxtralTTS, this is repurposed as cfg_alpha for flow matching.",
+    )
 
     @field_validator("stream_format")
     @classmethod
