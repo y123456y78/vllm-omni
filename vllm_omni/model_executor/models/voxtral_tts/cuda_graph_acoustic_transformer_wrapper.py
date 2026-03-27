@@ -234,15 +234,12 @@ class CUDAGraphAcousticTransformerWrapper:
         - Batch size exceeds largest captured size
         """
         actual_size = hidden_states.shape[0]
-        logger.warning("cudagraph __call__: cfg_alpha=%s, batch=%d", cfg_alpha.tolist(), actual_size)
 
         if not self.enabled or not self._warmed_up:
-            logger.warning("cudagraph __call__: falling back to eager (not warmed up)")
             return self.model.compute_mm_logits(hidden_states, cfg_alpha=cfg_alpha)
 
         padded_size = self._get_padded_size(actual_size)
         if padded_size is None or padded_size not in self.graphs:
-            logger.warning("cudagraph __call__: falling back to eager (no graph for size %d)", actual_size)
             return self.model.compute_mm_logits(hidden_states, cfg_alpha=cfg_alpha)
 
         # Zero static input, then copy actual data
@@ -252,9 +249,6 @@ class CUDAGraphAcousticTransformerWrapper:
         # Copy per-request cfg_alpha into static buffer (pad with 1.2 default)
         self.static_cfg_alpha[padded_size].fill_(1.2)
         self.static_cfg_alpha[padded_size][:actual_size, 0] = cfg_alpha
-        logger.warning("cudagraph __call__: replaying graph (padded=%d, actual=%d, cfg_alpha=%s)",
-                       padded_size, actual_size,
-                       self.static_cfg_alpha[padded_size][:actual_size, 0].tolist())
 
         # Fill noise buffer with fresh random values before replay so the
         # flow-matching ODE starts from different initial noise each time.
