@@ -38,6 +38,8 @@ stage_args:
       seed: 42
       detokenize: True
       repetition_penalty: 1.1
+      extra_args:
+        cfg_alpha: 1.2
   - stage_id: 1
     stage_type: llm  # Use llm stage type to launch OmniLLM
     runtime:

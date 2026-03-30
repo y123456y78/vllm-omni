@@ -283,6 +283,22 @@ class VoxtralTTSForConditionalGeneration(
                 multimodal_outputs={"audio": batch_audio_arrays},
             )
 
+    def _extract_cfg_alpha(self, **kwargs) -> torch.Tensor:
+        """Extract per-request cfg_alpha from sampling extra_args.
+
+        The value is supplied via ``SamplingParams(extra_args={"cfg_alpha": ...})``
+        and propagated by the omni model runner as ``sampling_extra_args``.
+        """
+        extra_args_list: list[dict] = kwargs.get("sampling_extra_args", [])
+        if not extra_args_list:
+            raise ValueError(
+                "VoxtralTTS requires 'cfg_alpha' in sampling extra_args "
+                "(set via extra_args in default_sampling_params)."
+            )
+        cfg_values = [ea.get("cfg_alpha", 1.0) for ea in extra_args_list]
+        device = next(self.parameters()).device
+        return torch.tensor(cfg_values, device=device, dtype=torch.float32)
+
     def make_omni_output(
         self, model_outputs: torch.Tensor | OmniOutput | tuple, logits_index: int | None = None, **kwargs
     ) -> OmniOutput:
