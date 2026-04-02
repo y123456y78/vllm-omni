@@ -635,7 +635,7 @@ class VoxtralTTSProcessorAdapter:
 
     @cached_property
     def sampling_rate(self) -> int:
-        return self._audio_processor.audio_config.sampling_rate
+        return 24000
 
     @cached_property
     def frame_rate(self) -> float:
