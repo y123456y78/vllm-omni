@@ -93,6 +93,34 @@ class OmniInputPreprocessor(InputPreprocessor):
 
         multi_modal_data = parsed_content.get("multi_modal_data")
 
+        # TTS debug logging
+        logger.info(
+            "[TTS_DEBUG] _process_tokens: prompt_token_ids length=%d, "
+            "has_multi_modal_data=%s",
+            len(prompt_token_ids),
+            multi_modal_data is not None and bool(multi_modal_data),
+        )
+        if multi_modal_data:
+            for key, val in multi_modal_data.items():
+                import numpy as _np
+                if isinstance(val, _np.ndarray):
+                    logger.info(
+                        "[TTS_DEBUG]   multi_modal_data[%r]: ndarray shape=%s, dtype=%s",
+                        key, val.shape, val.dtype,
+                    )
+                elif isinstance(val, list):
+                    logger.info(
+                        "[TTS_DEBUG]   multi_modal_data[%r]: list len=%d, "
+                        "elem_types=%s",
+                        key, len(val),
+                        [type(v).__name__ for v in val[:3]],
+                    )
+                else:
+                    logger.info(
+                        "[TTS_DEBUG]   multi_modal_data[%r]: type=%s",
+                        key, type(val).__name__,
+                    )
+
         inputs: OmniTokenInputs | MultiModalInputs
         if multi_modal_data:
             inputs = self._process_multimodal(

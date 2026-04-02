@@ -42,10 +42,16 @@ from vllm.multimodal.inputs import (
     MultiModalDataDict,
     MultiModalFieldConfig,
     MultiModalKwargsItems,
+    MultiModalKwargsOptionalItems,
     NestedTensors,
 )
 from vllm.multimodal.parse import AudioProcessorItems, MultiModalDataItems, MultiModalDataParser
 from vllm.multimodal.processing import BaseDummyInputsBuilder, BaseMultiModalProcessor
+from vllm.multimodal.processing import (
+    MultiModalPromptUpdates,
+    PlaceholderFeaturesInfo,
+    find_mm_placeholders,
+)
 from vllm.multimodal.processing.processor import (
     BaseProcessingInfo,
     MultiModalProcessingInfo,
@@ -643,7 +649,18 @@ class VoxtralTTSProcessorAdapter:
         audio_length: int,
     ) -> int:
         # TODO(@chenyo): only +1 for TTS
-        return 1 + ceil(audio_length / (self.sampling_rate // self.frame_rate))
+        num_tokens = 1 + ceil(audio_length / (self.sampling_rate // self.frame_rate))
+        logger.info(
+            "[TTS_DEBUG] get_num_audio_tokens: audio_length=%d, "
+            "sampling_rate=%d, frame_rate=%s, divisor=%d, "
+            "computed_tokens=%d",
+            audio_length,
+            self.sampling_rate,
+            self.frame_rate,
+            int(self.sampling_rate // self.frame_rate),
+            num_tokens,
+        )
+        return num_tokens
 
     def __call__(
         self,
@@ -652,6 +669,25 @@ class VoxtralTTSProcessorAdapter:
         audio_tokens: np.ndarray | list[np.ndarray] | None = None,
         **kwargs,
     ) -> Mapping[str, NestedTensors]:
+        logger.info(
+            "[TTS_DEBUG] VoxtralTTSProcessorAdapter.__call__: "
+            "text=%s, num_audios=%s, num_audio_tokens=%s, kwargs=%s",
+            [len(t) if isinstance(t, str) else t for t in (text if isinstance(text, list) else [text])] if text else None,
+            len(audios) if isinstance(audios, list) else (1 if audios is not None else 0),
+            len(audio_tokens) if isinstance(audio_tokens, list) else (1 if audio_tokens is not None else 0),
+            list(kwargs.keys()),
+        )
+        if audios is not None:
+            _audios_list = audios if isinstance(audios, list) else [audios]
+            for i, a in enumerate(_audios_list):
+                if isinstance(a, np.ndarray):
+                    logger.info(
+                        "[TTS_DEBUG]   audio[%d]: shape=%s, dtype=%s, len=%d",
+                        i, a.shape, a.dtype, len(a),
+                    )
+                else:
+                    logger.info("[TTS_DEBUG]   audio[%d]: type=%s", i, type(a))
+
         if text is None:
             text = []
         if not isinstance(text, list):
@@ -846,6 +882,27 @@ class VoxtralTTSMultiModalProcessor(BaseMultiModalProcessor[VoxtralTTSProcessing
     ) -> Sequence[PromptUpdate]:
         processor = self.info.get_hf_processor(**hf_processor_mm_kwargs)
         audio_id = processor.audio_token_id
+        begin_audio_id = processor.begin_audio_token_id
+
+        logger.info(
+            "[TTS_DEBUG] _get_prompt_updates: audio_token_id=%d, "
+            "begin_audio_token_id=%d, mm_items keys=%s",
+            audio_id,
+            begin_audio_id,
+            list(mm_items.keys()) if hasattr(mm_items, 'keys') else str(type(mm_items)),
+        )
+
+        # Log mm_items audio info
+        try:
+            audio_items = mm_items.get_items("audio", AudioProcessorItems)
+            if isinstance(audio_items, AudioProcessorItems):
+                count = audio_items.get_count()
+                logger.info("[TTS_DEBUG]   audio item count=%d", count)
+                for idx in range(count):
+                    alen = audio_items.get_audio_length(idx)
+                    logger.info("[TTS_DEBUG]   audio_items[%d] length=%d", idx, alen)
+        except Exception as e:
+            logger.warning("[TTS_DEBUG]   failed to inspect audio items: %s", e)
 
         def get_replacement(item_idx: int):
             audios = mm_items.get_items("audio", AudioProcessorItems)
@@ -854,6 +911,11 @@ class VoxtralTTSMultiModalProcessor(BaseMultiModalProcessor[VoxtralTTSProcessing
                 audio_token_len = processor.get_num_audio_tokens(audio_len)
             else:
                 raise ValueError(f"Unknown audio item type {type(audios)}")
+            logger.info(
+                "[TTS_DEBUG] get_replacement(item_idx=%d): audio_len=%d, "
+                "audio_token_len=%d, replacement=[%d]*%d",
+                item_idx, audio_len, audio_token_len, audio_id, audio_token_len,
+            )
             return [audio_id] * audio_token_len
 
         return [
@@ -869,10 +931,168 @@ class VoxtralTTSMultiModalProcessor(BaseMultiModalProcessor[VoxtralTTSProcessing
         inputs: ProcessorInputs,
         timing_ctx: TimingContext,
     ) -> tuple[list[int], MultiModalProcessingInfo, bool]:
+        logger.info(
+            "[TTS_DEBUG] _cached_apply_hf_processor: "
+            "input prompt length=%d, first_20=%s, last_20=%s",
+            len(inputs.prompt) if isinstance(inputs.prompt, list) else len(str(inputs.prompt)),
+            inputs.prompt[:20] if isinstance(inputs.prompt, list) else str(inputs.prompt)[:60],
+            inputs.prompt[-20:] if isinstance(inputs.prompt, list) else str(inputs.prompt)[-60:],
+        )
+
         prompt_ids, mm_info, _ = super()._cached_apply_hf_processor(inputs, timing_ctx)
+
+        logger.info(
+            "[TTS_DEBUG] _cached_apply_hf_processor result: "
+            "prompt_ids length=%d, first_20=%s, last_20=%s, "
+            "forcing is_update_applied=True",
+            len(prompt_ids),
+            prompt_ids[:20],
+            prompt_ids[-20:],
+        )
+
+        # Count consecutive audio tokens in prompt to help diagnose placeholder issues
+        audio_processor = self.info.get_hf_processor()
+        audio_id = audio_processor.audio_token_id
+        begin_audio_id = audio_processor.begin_audio_token_id
+        audio_token_count = sum(1 for t in prompt_ids if t == audio_id)
+        begin_audio_count = sum(1 for t in prompt_ids if t == begin_audio_id)
+
+        # Find longest consecutive run of audio_id
+        max_run = 0
+        current_run = 0
+        for t in prompt_ids:
+            if t == audio_id:
+                current_run += 1
+                max_run = max(max_run, current_run)
+            else:
+                current_run = 0
+
+        logger.info(
+            "[TTS_DEBUG] prompt token analysis: "
+            "total_audio_tokens(id=%d)=%d, begin_audio_tokens(id=%d)=%d, "
+            "longest_consecutive_audio_run=%d",
+            audio_id, audio_token_count,
+            begin_audio_id, begin_audio_count,
+            max_run,
+        )
 
         # NOTE: The tokens are already inserted by the chat template
         return prompt_ids, mm_info, True
+
+    def _maybe_apply_prompt_updates(
+        self,
+        mm_items: MultiModalDataItems,
+        prompt_ids: list[int],
+        mm_kwargs: MultiModalKwargsOptionalItems,
+        mm_prompt_updates: MultiModalPromptUpdates,
+        is_update_applied: bool,
+    ) -> tuple[list[int], Mapping[str, list[PlaceholderFeaturesInfo]]]:
+        """Override to add detailed diagnostic logging before validation."""
+        mm_item_counts = mm_items.get_all_counts()
+
+        logger.info(
+            "[TTS_DEBUG] _maybe_apply_prompt_updates: "
+            "is_update_applied=%s, mm_item_counts=%s, "
+            "prompt_ids length=%d",
+            is_update_applied,
+            dict(mm_item_counts),
+            len(prompt_ids),
+        )
+
+        # Log the prompt updates structure
+        for modality, updates_list in mm_prompt_updates.items():
+            logger.info(
+                "[TTS_DEBUG]   mm_prompt_updates[%r]: %d items",
+                modality, len(updates_list),
+            )
+            for item_idx, item_updates in enumerate(updates_list):
+                for update_idx, update in enumerate(item_updates):
+                    content = update.content
+                    content_tokens = list(content.full) if hasattr(content, 'full') else str(content)
+                    logger.info(
+                        "[TTS_DEBUG]     update[%d][%d]: "
+                        "replacement_len=%d, first_5=%s",
+                        item_idx, update_idx,
+                        len(content_tokens) if isinstance(content_tokens, list) else -1,
+                        content_tokens[:5] if isinstance(content_tokens, list) else content_tokens[:50],
+                    )
+
+        if is_update_applied:
+            # This is the path that fails. Do the placeholder finding with logging.
+            tokenizer = self.info.get_tokenizer()
+            mm_placeholders = find_mm_placeholders(
+                prompt_ids, mm_prompt_updates, tokenizer,
+            )
+
+            logger.info(
+                "[TTS_DEBUG] find_mm_placeholders result: %s",
+                {m: len(phs) for m, phs in mm_placeholders.items()},
+            )
+
+            for modality, phs in mm_placeholders.items():
+                for ph in phs:
+                    logger.info(
+                        "[TTS_DEBUG]   placeholder[%r]: item_idx=%d, "
+                        "start_idx=%d, num_tokens=%d",
+                        modality, ph.item_idx, ph.start_idx, len(ph.tokens),
+                    )
+
+            # Check for mismatch before it raises
+            for modality, item_count in mm_item_counts.items():
+                placeholders = mm_placeholders.get(modality, [])
+                if len(placeholders) != item_count:
+                    # DETAILED DIAGNOSTICS for the failing case
+                    logger.error(
+                        "[TTS_DEBUG] PLACEHOLDER MISMATCH DETECTED! "
+                        "modality=%r, expected=%d placeholders, found=%d",
+                        modality, item_count, len(placeholders),
+                    )
+                    logger.error(
+                        "[TTS_DEBUG] Full prompt_ids (%d tokens): %s",
+                        len(prompt_ids), prompt_ids,
+                    )
+
+                    # Log what we're looking for
+                    if modality in mm_prompt_updates:
+                        for item_idx, item_updates in enumerate(mm_prompt_updates[modality]):
+                            for update in item_updates:
+                                expected = list(update.content.full)
+                                logger.error(
+                                    "[TTS_DEBUG] Looking for: %d consecutive "
+                                    "tokens of id=%d (first token=%s)",
+                                    len(expected),
+                                    expected[0] if expected else -1,
+                                    expected[:3],
+                                )
+                                # Search for any run of the expected token
+                                if expected:
+                                    target_id = expected[0]
+                                    runs = []
+                                    run_start = -1
+                                    run_len = 0
+                                    for i, t in enumerate(prompt_ids):
+                                        if t == target_id:
+                                            if run_start == -1:
+                                                run_start = i
+                                            run_len += 1
+                                        else:
+                                            if run_len > 0:
+                                                runs.append((run_start, run_len))
+                                            run_start = -1
+                                            run_len = 0
+                                    if run_len > 0:
+                                        runs.append((run_start, run_len))
+                                    logger.error(
+                                        "[TTS_DEBUG] All runs of token %d in "
+                                        "prompt: %s (expected run of length %d)",
+                                        target_id, runs, len(expected),
+                                    )
+
+        # Call super to do the actual work (which will raise on mismatch)
+        return super()._maybe_apply_prompt_updates(
+            mm_items, prompt_ids, mm_kwargs,
+            mm_prompt_updates, is_update_applied,
+        )
 
 
 @MULTIMODAL_REGISTRY.register_processor(
