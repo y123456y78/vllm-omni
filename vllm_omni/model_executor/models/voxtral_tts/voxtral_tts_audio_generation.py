@@ -646,6 +646,13 @@ class VoxtralTTSProcessorAdapter:
         audio_length: int,
     ) -> int:
         # TODO(@chenyo): only +1 for TTS
+        logger.info(
+            f"🤯🤯🤯🤯🤯 {self.sampling_rate}"
+        )
+        self.sampling_rate = 24000
+        logger.info(
+            f"🤡🤡🤡🤡🤡 {self.sampling_rate}"
+        )
         num_tokens = 1 + ceil(audio_length / (self.sampling_rate // self.frame_rate))
         logger.info(
             "[TTS_DEBUG] get_num_audio_tokens: audio_length=%d, "
