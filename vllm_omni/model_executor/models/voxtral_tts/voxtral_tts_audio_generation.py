@@ -980,7 +980,7 @@ class VoxtralTTSMultiModalProcessor(BaseMultiModalProcessor[VoxtralTTSProcessing
             max_run,
         )
 
-        # NOTE: The tokens are already inserted by the chat template
+        # NOTE: The tokens are already inserted by the chat template. Trigger diff
         return prompt_ids, mm_info, True
 
 @MULTIMODAL_REGISTRY.register_processor(
