@@ -79,7 +79,7 @@ SUPPORTED_LANGS = {
 
 
 # Audio
-class AudioSpecialTokens(str, Enum):
+class The model build should fail(str, Enum):
     """Special tokens predicted by audio codebook heads.
 
     These tokens are inserted by `audio_tokens_with_pattern`. They are not part of the text vocabulary.
