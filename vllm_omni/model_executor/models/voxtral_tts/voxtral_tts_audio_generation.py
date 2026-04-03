@@ -901,15 +901,56 @@ class VoxtralTTSMultiModalProcessor(BaseMultiModalProcessor[VoxtralTTSProcessing
 
         # Log mm_items audio info
         try:
+            # Log raw mm_items structure
+            if hasattr(mm_items, 'get_all_counts'):
+                logger.info("[TTS_DEBUG]   mm_items.get_all_counts()=%s", dict(mm_items.get_all_counts()))
+
+            raw_audio_items = mm_items.get("audio") if hasattr(mm_items, 'get') else None
+            if raw_audio_items is not None:
+                logger.info(
+                    "[TTS_DEBUG]   mm_items['audio'] raw type=%s, "
+                    "class=%s, has get_count=%s",
+                    type(raw_audio_items).__name__,
+                    type(raw_audio_items).__mro__,
+                    hasattr(raw_audio_items, 'get_count'),
+                )
+                if hasattr(raw_audio_items, 'get_count'):
+                    logger.info(
+                        "[TTS_DEBUG]   mm_items['audio'].get_count()=%d",
+                        raw_audio_items.get_count(),
+                    )
+                if hasattr(raw_audio_items, 'data'):
+                    d = raw_audio_items.data
+                    logger.info(
+                        "[TTS_DEBUG]   mm_items['audio'].data type=%s, len=%s",
+                        type(d).__name__,
+                        len(d) if hasattr(d, '__len__') else 'N/A',
+                    )
+
             audio_items = mm_items.get_items("audio", AudioProcessorItems)
+            logger.info(
+                "[TTS_DEBUG]   get_items('audio', AudioProcessorItems) "
+                "returned type=%s, is_AudioProcessorItems=%s",
+                type(audio_items).__name__,
+                isinstance(audio_items, AudioProcessorItems),
+            )
             if isinstance(audio_items, AudioProcessorItems):
                 count = audio_items.get_count()
                 logger.info("[TTS_DEBUG]   audio item count=%d", count)
                 for idx in range(count):
                     alen = audio_items.get_audio_length(idx)
                     logger.info("[TTS_DEBUG]   audio_items[%d] length=%d", idx, alen)
+            else:
+                logger.info(
+                    "[TTS_DEBUG]   audio_items is NOT AudioProcessorItems, "
+                    "type=%s, has get_count=%s",
+                    type(audio_items).__name__,
+                    hasattr(audio_items, 'get_count'),
+                )
+                if hasattr(audio_items, 'get_count'):
+                    logger.info("[TTS_DEBUG]   audio_items.get_count()=%d", audio_items.get_count())
         except Exception as e:
-            logger.warning("[TTS_DEBUG]   failed to inspect audio items: %s", e)
+            logger.warning("[TTS_DEBUG]   failed to inspect audio items: %s", e, exc_info=True)
 
         def get_replacement(item_idx: int):
             audios = mm_items.get_items("audio", AudioProcessorItems)
@@ -941,6 +982,14 @@ class VoxtralTTSMultiModalProcessor(BaseMultiModalProcessor[VoxtralTTSProcessing
         inputs: ProcessorInputs,
         timing_ctx: TimingContext,
     ) -> tuple[list[int], MultiModalProcessingInfo, bool]:
+
+        logger.info(
+            f"[TTS_DEBUG] _cached_apply_hf_processor: 🤯🤯🤯🤯🤯 {self.sampling_rate}"
+        )
+        self.sampling_rate = 24000
+        logger.info(
+            f"[TTS_DEBUG] _cached_apply_hf_processor: 🤡🤡🤡🤡🤡 {self.sampling_rate}"
+        )
         logger.info(
             "[TTS_DEBUG] _cached_apply_hf_processor: input prompt length=%d, first_20=%s, last_20=%s",
             len(inputs.prompt) if isinstance(inputs.prompt, list) else len(str(inputs.prompt)),
