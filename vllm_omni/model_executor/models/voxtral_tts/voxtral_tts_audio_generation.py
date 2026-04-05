@@ -646,13 +646,6 @@ class VoxtralTTSProcessorAdapter:
         audio_length: int,
     ) -> int:
         # TODO(@chenyo): only +1 for TTS
-        logger.info(
-            f"🤯🤯🤯🤯🤯 {self.sampling_rate}"
-        )
-        self.sampling_rate = 24000
-        logger.info(
-            f"🤡🤡🤡🤡🤡 {self.sampling_rate}"
-        )
         num_tokens = 1 + ceil(audio_length / (self.sampling_rate // self.frame_rate))
         logger.info(
             "[TTS_DEBUG] get_num_audio_tokens: audio_length=%d, "
@@ -983,13 +976,6 @@ class VoxtralTTSMultiModalProcessor(BaseMultiModalProcessor[VoxtralTTSProcessing
         timing_ctx: TimingContext,
     ) -> tuple[list[int], MultiModalProcessingInfo, bool]:
 
-        logger.info(
-            f"[TTS_DEBUG] _cached_apply_hf_processor: 🤯🤯🤯🤯🤯 {self.sampling_rate}"
-        )
-        self.sampling_rate = 24000
-        logger.info(
-            f"[TTS_DEBUG] _cached_apply_hf_processor: 🤡🤡🤡🤡🤡 {self.sampling_rate}"
-        )
         logger.info(
             "[TTS_DEBUG] _cached_apply_hf_processor: input prompt length=%d, first_20=%s, last_20=%s",
             len(inputs.prompt) if isinstance(inputs.prompt, list) else len(str(inputs.prompt)),
