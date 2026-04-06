@@ -48,7 +48,7 @@ class CUDAGraphAcousticTransformerWrapper:
         self.acoustic_embeddings_levels = self.acoustic_transformer.acoustic_embeddings_levels
 
         self.cfg_alpha = 1.2
-        self.n_steps = 8
+        self.n_steps = 7
 
         # Graph storage
         self.graphs: dict[int, CUDAGraph] = {}
@@ -72,7 +72,7 @@ class CUDAGraphAcousticTransformerWrapper:
         )
 
         # Pre-create persistent buffers
-        self.timesteps = torch.linspace(0, 1, self.n_steps, device=device, dtype=dtype)
+        self.timesteps = torch.linspace(0, 1, self.n_steps + 1, device=device, dtype=dtype)
         self.fake_eos_one = torch.tensor(1.0, dtype=dtype, device=device)
         self.fake_eos_zero = torch.tensor(0.0, dtype=dtype, device=device)
 

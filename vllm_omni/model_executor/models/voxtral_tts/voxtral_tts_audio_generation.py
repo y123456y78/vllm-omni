@@ -437,13 +437,13 @@ class FlowMatchingAudioTransformer(nn.Module):
 
         # Flow matching constants
         # TODO(chenyo): hardcoded, need to fix
-        self._acoustic_decode_iters = 8
+        self._acoustic_decode_iters = 7
         # TODO(chenyo): hardcoded, need to fix
         self._cfg_alpha = 1.2
         self._noise_scale = 1.0
         self.register_buffer(
             "_timesteps",
-            torch.linspace(0, 1, self._acoustic_decode_iters),
+            torch.linspace(0, 1, self._acoustic_decode_iters + 1),
             persistent=False,
         )
 
