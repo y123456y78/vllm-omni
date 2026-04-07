@@ -48,7 +48,7 @@ class CUDAGraphAcousticTransformerWrapper:
         self.acoustic_embeddings_levels = self.acoustic_transformer.acoustic_embeddings_levels
 
         self.cfg_alpha = 1.2
-        self.n_steps = 7
+        self.n_steps = self.acoustic_transformer.model_args.acoustic_transformer_args.n_decoding_steps
 
         # Graph storage
         self.graphs: dict[int, CUDAGraph] = {}

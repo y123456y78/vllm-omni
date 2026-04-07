@@ -84,6 +84,7 @@ class SyntheticModelArgs:
     def __init__(self):
         self.semantic_codebook_size = SEMANTIC_CODEBOOK_SIZE
         self.n_acoustic_codebook = N_ACOUSTIC_CODEBOOK
+        self.n_decoding_steps = 7
 
 
 class SyntheticAcousticTransformer(nn.Module):
