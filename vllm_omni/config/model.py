@@ -112,6 +112,7 @@ class OmniModelConfig(ModelConfig):
     omni_kv_config: dict | None = None
     codec_frame_rate_hz: float | None = None
     task_type: str | None = None
+    has_sampling_extra_args: bool = False
 
     @property
     def registry(self):

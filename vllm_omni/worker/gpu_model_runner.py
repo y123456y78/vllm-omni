@@ -1030,14 +1030,17 @@ class OmniGPUModelRunner(GPUModelRunner):
 
         # Gather extra_args from per-request SamplingParams so models can
         # access custom parameters (e.g. cfg_alpha for VoxtralTTS).
-        extra_args_list: list[dict] = []
-        for req_id in self.input_batch.req_ids:
-            req = self.requests.get(req_id)
-            sp = req.sampling_params if req else None
-            extra_args_list.append(
-                sp.extra_args if sp and sp.extra_args else {}
-            )
-        model_kwargs_extra["sampling_extra_args"] = extra_args_list
+        # Only iterate when the model's stage config declares extra_args
+        # in its default_sampling_params to avoid overhead for other models.
+        if getattr(self.model_config, "has_sampling_extra_args", False):
+            extra_args_list: list[dict] = []
+            for req_id in self.input_batch.req_ids:
+                req = self.requests.get(req_id)
+                sp = req.sampling_params if req else None
+                extra_args_list.append(
+                    sp.extra_args if sp and sp.extra_args else {}
+                )
+            model_kwargs_extra["sampling_extra_args"] = extra_args_list
 
         return model_kwargs_extra
 
