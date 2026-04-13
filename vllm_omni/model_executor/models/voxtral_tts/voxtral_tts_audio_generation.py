@@ -873,8 +873,8 @@ class VoxtralTTSMultiModalProcessor(BaseMultiModalProcessor[VoxtralTTSProcessing
         """
         Apply the HF processor on the multi-modal data only.
 
-        Issue: Voxtral TTS use Mistral Tokenizer with a custom audio encoder so it
-        does not work with HF call_hf_processor_mm_only directly.
+        Issue: Voxtral TTS use Mistral Tokenizer with custom audio encoder. It doesn't
+        inherit Transformers ProcessorMixin and can't use call_hf_processor_mm_only.
 
         Solution: Override this method to call _apply_hf_processor_text_mm directly.
         """
