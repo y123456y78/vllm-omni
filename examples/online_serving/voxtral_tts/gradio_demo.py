@@ -234,7 +234,7 @@ def run_inference(
         "model": model,
         "response_format": "wav",
         "voice": voice_name,
-        "cfg_alpha": cfg_alpha,
+        "extra_params": {"cfg_alpha": cfg_alpha},
     }
 
     response = httpx.post(
