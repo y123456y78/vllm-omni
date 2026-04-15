@@ -1605,6 +1605,15 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
                 max_tokens,
             )
 
+        # Voxtral TTS: inject per-request cfg_alpha into extra_args
+        if self._tts_model_type == "voxtral_tts" and request.cfg_alpha is not None and sampling_params_list:
+            import copy
+
+            sampling_params_list = copy.deepcopy(sampling_params_list)
+            if sampling_params_list[0].extra_args is None:
+                sampling_params_list[0].extra_args = {}
+            sampling_params_list[0].extra_args["cfg_alpha"] = request.cfg_alpha
+
         # Fish defaults come from stage_configs YAML. Only override when the caller
         # explicitly requests a different generation length.
         if self._is_fish_speech and request.max_new_tokens is not None and sampling_params_list:

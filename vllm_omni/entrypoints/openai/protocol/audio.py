@@ -74,6 +74,12 @@ class OpenAICreateSpeechRequest(BaseModel):
         ge=0,
         description="Per-request initial chunk size override. If null, computed dynamically based on server load.",
     )
+    cfg_alpha: float | None = Field(
+        default=None,
+        ge=0.0,
+        description="CFG alpha for flow-matching guidance strength (Voxtral TTS). "
+        "If null, uses the default from stage config (typically 1.2).",
+    )
 
     @field_validator("stream_format")
     @classmethod
