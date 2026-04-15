@@ -381,8 +381,8 @@ def main(
                 )
                 cfg_alpha_slider = gr.Slider(
                     minimum=1.0,
-                    maximum=1.6,
-                    step=0.05,
+                    maximum=2.0,
+                    step=0.1,
                     value=1.2,
                     label="CFG Alpha",
                     info="Flow-matching guidance strength (default: 1.2)",
