@@ -252,12 +252,12 @@ def test_exact_size_output_format(model, wrapper, batch_size):
 def test_exact_size_deterministic(model, wrapper, batch_size):
     """Same input + same RNG state produces identical CUDA graph output."""
     hidden = _random_hidden(batch_size)
-    alpha = _cfg_alpha(batch_size)
+    cfg_alpha = _cfg_alpha(batch_size)
     with torch.no_grad():
         torch.manual_seed(42)
-        eos1, codes1 = _unpack_audio_codes(wrapper(hidden, cfg_alpha=alpha))
+        eos1, codes1 = _unpack_audio_codes(wrapper(hidden, cfg_alpha=cfg_alpha))
         torch.manual_seed(42)
-        eos2, codes2 = _unpack_audio_codes(wrapper(hidden, cfg_alpha=alpha))
+        eos2, codes2 = _unpack_audio_codes(wrapper(hidden, cfg_alpha=cfg_alpha))
     torch.testing.assert_close(eos1, eos2, atol=0, rtol=0)
     torch.testing.assert_close(codes1, codes2, atol=0, rtol=0)
 
