@@ -137,7 +137,7 @@ class SyntheticModel(nn.Module):
     def compute_mm_logits(
         self,
         hidden_states: torch.Tensor,
-        cfg_alpha: torch.Tensor | None = None,
+        cfg_alpha: torch.Tensor,
     ):
         """Eager fallback path: replicate what the wrapper does."""
         at = self.acoustic_transformer
@@ -301,7 +301,7 @@ def test_fallback_eager_exact_match(model, wrapper, batch_size):
     alpha = _cfg_alpha(batch_size)
     with torch.no_grad():
         torch.manual_seed(100)
-        eager_eos, eager_codes = _unpack_audio_codes(model.compute_mm_logits(hidden))
+        eager_eos, eager_codes = _unpack_audio_codes(model.compute_mm_logits(hidden, cfg_alpha=alpha))
         torch.manual_seed(100)
         graph_eos, graph_codes = _unpack_audio_codes(wrapper(hidden, cfg_alpha=alpha))
     torch.testing.assert_close(graph_eos, eager_eos, atol=0, rtol=0)
@@ -320,7 +320,7 @@ def test_disabled_wrapper_matches_eager(model, wrapper):
     wrapper.enabled = False
     with torch.no_grad():
         torch.manual_seed(200)
-        eager_eos, eager_codes = _unpack_audio_codes(model.compute_mm_logits(hidden))
+        eager_eos, eager_codes = _unpack_audio_codes(model.compute_mm_logits(hidden, cfg_alpha=alpha))
         torch.manual_seed(200)
         graph_eos, graph_codes = _unpack_audio_codes(wrapper(hidden, cfg_alpha=alpha))
     wrapper.enabled = True
