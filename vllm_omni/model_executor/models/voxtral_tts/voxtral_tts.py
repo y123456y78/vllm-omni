@@ -287,20 +287,9 @@ class VoxtralTTSForConditionalGeneration(
         """Extract per-request cfg_alpha from sampling_extra_args.
 
         Returns a 1-D tensor of shape (B,) with per-request cfg_alpha values.
-        Falls back to 1.2 if sampling_extra_args is not available.
         """
-        default_cfg_alpha = 1.2
-        sampling_extra_args = kwargs.get("sampling_extra_args")
-        B = input_hidden_states.shape[0]
-        if sampling_extra_args is None:
-            return torch.full(
-                (B,), default_cfg_alpha,
-                device=input_hidden_states.device,
-                dtype=input_hidden_states.dtype,
-            )
-        cfg_alpha_values = [
-            ea.get("cfg_alpha", default_cfg_alpha) for ea in sampling_extra_args
-        ]
+        sampling_extra_args = kwargs["sampling_extra_args"]
+        cfg_alpha_values = [ea["cfg_alpha"] for ea in sampling_extra_args]
         return torch.tensor(
             cfg_alpha_values,
             device=input_hidden_states.device,
@@ -317,10 +306,12 @@ class VoxtralTTSForConditionalGeneration(
                 input_hidden_states = hidden_states[logits_index]
                 cfg_alpha = self._extract_cfg_alpha(input_hidden_states, **kwargs)
                 if self._cudagraph_acoustic_transformer is not None:
+                    logger.info("\U0001f3af cudagraph cfg_alpha=%s", cfg_alpha.tolist())
                     fake_eos, multimodal_outputs = self._cudagraph_acoustic_transformer(
                         input_hidden_states, cfg_alpha=cfg_alpha
                     )
                 else:
+                    logger.info("\U0001f9ea eager cfg_alpha=%s", cfg_alpha.tolist())
                     fake_eos, multimodal_outputs = self.model.compute_mm_logits(
                         input_hidden_states, cfg_alpha=cfg_alpha
                     )
