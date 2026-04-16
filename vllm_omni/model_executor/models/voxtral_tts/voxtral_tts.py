@@ -317,12 +317,10 @@ class VoxtralTTSForConditionalGeneration(
                 input_hidden_states = hidden_states[logits_index]
                 cfg_alpha = self._extract_cfg_alpha(input_hidden_states, **kwargs)
                 if self._cudagraph_acoustic_transformer is not None:
-                    logger.info("\U0001f3af cudagraph cfg_alpha=%s", cfg_alpha.tolist())
                     fake_eos, multimodal_outputs = self._cudagraph_acoustic_transformer(
                         input_hidden_states, cfg_alpha=cfg_alpha
                     )
                 else:
-                    logger.info("\U0001f9ea eager cfg_alpha=%s", cfg_alpha.tolist())
                     fake_eos, multimodal_outputs = self.model.compute_mm_logits(
                         input_hidden_states, cfg_alpha=cfg_alpha
                     )
