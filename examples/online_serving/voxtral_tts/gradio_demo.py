@@ -467,7 +467,15 @@ def main(
         reset_btn.click(
             fn=make_on_reset(languages, language_voices),
             inputs=[],
-            outputs=[language_dropdown, voice_name, text_prompt, cfg_alpha_slider, output_audio, submit_btn, share_link_box],
+            outputs=[
+                language_dropdown,
+                voice_name,
+                text_prompt,
+                cfg_alpha_slider,
+                output_audio,
+                submit_btn,
+                share_link_box,
+            ],
         )
 
         def make_load_from_share(outputs_dir: Path | None, languages: list[str], language_voices: dict[str, list[str]]):

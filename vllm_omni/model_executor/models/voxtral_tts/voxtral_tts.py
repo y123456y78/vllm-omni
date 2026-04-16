@@ -295,13 +295,12 @@ class VoxtralTTSForConditionalGeneration(
         sampling_extra_args = kwargs.get("sampling_extra_args")
         if sampling_extra_args is None:
             return torch.full(
-                (B,), self._DEFAULT_CFG_ALPHA,
+                (B,),
+                self._DEFAULT_CFG_ALPHA,
                 device=input_hidden_states.device,
                 dtype=input_hidden_states.dtype,
             )
-        cfg_alpha_values = [
-            ea.get("cfg_alpha", self._DEFAULT_CFG_ALPHA) for ea in sampling_extra_args
-        ]
+        cfg_alpha_values = [ea.get("cfg_alpha", self._DEFAULT_CFG_ALPHA) for ea in sampling_extra_args]
         return torch.tensor(
             cfg_alpha_values,
             device=input_hidden_states.device,
