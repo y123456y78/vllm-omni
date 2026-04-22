@@ -135,7 +135,7 @@ def test_voxtral_tts_offline_basic(run_level):
 @pytest.mark.omni
 @hardware_test(res={"cuda": "H100"}, num_cards=1)
 def test_voxtral_tts_offline_fp8_basic(run_level):
-    """Test basic Voxtral TTS offline inference with FP8 quantization."""
+    """Test basic Voxtral TTS offline inference with FP8 LM-only quantization."""
     stage_config = _resolve_stage_config(run_level)
 
     with OmniRunner(
