@@ -18,12 +18,17 @@ import torch
 from fastapi import HTTPException, Request, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from transformers.utils.hub import cached_file
-from vllm.entrypoints.openai.engine.protocol import ErrorResponse
+from vllm.entrypoints.launcher import terminate_if_errored
+from vllm.entrypoints.openai.engine.protocol import (
+    ErrorResponse,
+    RequestResponseMetadata,
+)
 from vllm.entrypoints.openai.engine.serving import OpenAIServing
 from vllm.logger import init_logger
 from vllm.multimodal.media import MediaConnector
 from vllm.utils import random_uuid
 from vllm.utils.async_utils import make_async
+from vllm.v1.engine.exceptions import EngineDeadError, EngineGenerateError
 
 from vllm_omni.entrypoints.openai.audio_utils_mixin import AudioMixin
 from vllm_omni.entrypoints.openai.protocol.audio import (
@@ -217,6 +222,8 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
             "Re-upload voices after each restart if needed."
         )
         self._tts_tokenizer = None
+        self._voxcpm2_tokenizer = None
+        self._voxcpm2_split_map: dict[int, list[int]] = {}
 
         logger.info(f"Loaded {len(self.supported_speakers)} supported speakers: {sorted(self.supported_speakers)}")
 
@@ -455,6 +462,25 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
         except Exception as e:
             logger.warning("Failed to estimate Fish Speech prompt length, using fallback 2048: %s", e)
             return 2048
+
+    async def _build_voxcpm2_prompt(self, request: OpenAICreateSpeechRequest) -> dict[str, Any]:
+        """Build prefill prompt for VoxCPM2 TTS (`prompt_token_ids` padded to full prefill length)."""
+        from vllm_omni.model_executor.models.voxcpm2.voxcpm2_talker import build_voxcpm2_prompt
+
+        self._voxcpm2_encode("")  # lazy-init tokenizer + split_map
+        ref_audio = None
+        ref_sr = None
+        if request.ref_audio is not None:
+            ref_audio, ref_sr = await self._resolve_ref_audio(request.ref_audio)
+        return build_voxcpm2_prompt(
+            hf_config=self.engine_client.model_config.hf_config,
+            tokenizer=self._voxcpm2_tokenizer,
+            split_map=self._voxcpm2_split_map,
+            text=request.input,
+            ref_audio=ref_audio,
+            ref_sr=ref_sr,
+            ref_text=request.ref_text,
+        )
 
     def _get_uploaded_audio_data(self, voice_name: str) -> str | None:
         """Get base64 encoded audio data for uploaded voice."""
@@ -813,6 +839,25 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
             return None  # VoxCPM2 accepts any text input
         return self._validate_qwen_tts_request(request)
 
+    def _voxcpm2_encode(self, text: str) -> list[int]:
+        """Tokenize text for VoxCPM2, splitting multichar Chinese tokens."""
+        from vllm_omni.model_executor.models.voxcpm2.voxcpm2_talker import (
+            build_cjk_split_map,
+            split_multichar_chinese,
+        )
+
+        if self._voxcpm2_tokenizer is None:
+            from transformers import AutoTokenizer
+
+            model_name = self.engine_client.model_config.model
+            tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+            self._voxcpm2_split_map = build_cjk_split_map(tokenizer)
+            self._voxcpm2_tokenizer = tokenizer
+            logger.info("VoxCPM2 serving: built multichar split map (%d entries)", len(self._voxcpm2_split_map))
+
+        ids = self._voxcpm2_tokenizer.encode(text, add_special_tokens=True)
+        return split_multichar_chinese(ids, self._voxcpm2_split_map)
+
     def _validate_ref_audio_format(self, ref_audio: str) -> str | None:
         """Validate ref_audio is a supported URI format. Returns error or None."""
         if not (
@@ -1112,7 +1157,13 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
             )
         return wav_np.tolist(), sr
 
-    async def _generate_audio_chunks(self, generator, request_id: str, response_format: str = "pcm"):
+    async def _generate_audio_chunks(
+        self,
+        generator,
+        request_id: str,
+        response_format: str = "pcm",
+        raw_request: Request | None = None,
+    ):
         """Generate audio chunks for streaming response.
 
         Handles two audio output modes from the engine:
@@ -1186,6 +1237,19 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
                     yield self.create_audio(audio_obj).audio_data
         except asyncio.CancelledError:
             logger.info("Streaming request %s cancelled by client", request_id)
+            raise
+        except EngineDeadError as e:
+            logger.error(
+                "EngineDeadError during streaming speech for %s: %s",
+                request_id,
+                e,
+            )
+            # Actively signal shutdown rather than relying on the watchdog.
+            if raw_request is not None:
+                terminate_if_errored(
+                    server=raw_request.app.state.server,
+                    engine=self.engine_client,
+                )
             raise
         except Exception as e:
             logger.exception("Streaming speech generation failed for %s: %s", request_id, e)
@@ -1461,6 +1525,7 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
     async def _prepare_speech_generation(
         self,
         request: OpenAICreateSpeechRequest,
+        request_id: str | None = None,
     ) -> tuple[str, Any, dict[str, Any]]:
         if self.engine_client.errored:
             raise self.engine_client.dead_error
@@ -1504,14 +1569,8 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
             if request.instructions:
                 prompt["instruct"] = request.instructions
         elif self._tts_model_type == "voxcpm2":
+            prompt = await self._build_voxcpm2_prompt(request)
             tts_params = {}
-            additional: dict[str, Any] = {}
-            if request.ref_audio is not None:
-                wav_list, sr = await self._resolve_ref_audio(request.ref_audio)
-                additional["reference_audio"] = [[wav_list, sr]]
-            prompt = {"prompt": request.input}
-            if additional:
-                prompt["additional_information"] = additional
         elif self._is_tts:
             validation_error = self._validate_tts_request(request)
             if validation_error:
@@ -1559,7 +1618,7 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
             tts_params = {}
             prompt = {"prompt": request.input}
 
-        request_id = f"speech-{random_uuid()}"
+        request_id = request_id or f"speech-{random_uuid()}"
         if self._is_fish_speech:
             model_type = "fish_speech"
         elif self._tts_model_type == "voxtral_tts":
@@ -1656,8 +1715,9 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
         self,
         request: OpenAICreateSpeechRequest,
         base64_encode: bool = False,
+        request_id: str | None = None,
     ) -> tuple[bytes | str, str]:
-        request_id, generator, _ = await self._prepare_speech_generation(request)
+        request_id, generator, _ = await self._prepare_speech_generation(request, request_id=request_id)
 
         final_output: OmniRequestOutput | None = None
         async for res in generator:
@@ -1781,6 +1841,8 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
 
         except asyncio.CancelledError:
             return self._diffusion_error_response("Client disconnected")
+        except (EngineGenerateError, EngineDeadError):
+            raise  # Propagate to the global Omni exception handler
         except ValueError as e:
             return self._diffusion_error_response(str(e))
         except Exception as e:
@@ -1826,6 +1888,12 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
             logger.error("Error with model %s", error_check_ret)
             return error_check_ret
 
+        request_id = f"speech-{random_uuid()}"
+        if raw_request:
+            raw_request.state.request_metadata = RequestResponseMetadata(
+                request_id=request_id,
+            )
+
         try:
             if request.stream:
                 # Determine response format and media type for streaming
@@ -1846,17 +1914,24 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
                     )
 
                 media_type = "audio/wav" if response_format == "wav" else "audio/pcm"
-                request_id, generator, _ = await self._prepare_speech_generation(request)
+                _, generator, _ = await self._prepare_speech_generation(request, request_id=request_id)
                 return StreamingResponse(
-                    self._generate_audio_chunks(generator, request_id, response_format),
+                    self._generate_audio_chunks(
+                        generator,
+                        request_id,
+                        response_format,
+                        raw_request=raw_request,
+                    ),
                     media_type=media_type,
                 )
 
-            audio_bytes, media_type = await self._generate_audio_bytes(request)
+            audio_bytes, media_type = await self._generate_audio_bytes(request, request_id=request_id)
             return Response(content=audio_bytes, media_type=media_type)
 
         except asyncio.CancelledError:
             return self.create_error_response("Client disconnected")
+        except (EngineGenerateError, EngineDeadError):
+            raise  # Propagate to the global Omni exception handler
         except ValueError as e:
             return self.create_error_response(e)
         except Exception as e:
