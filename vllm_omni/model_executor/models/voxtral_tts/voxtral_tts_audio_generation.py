@@ -3,7 +3,7 @@
 
 import math
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass, replace
 from enum import Enum
 from functools import cached_property
 from math import ceil
@@ -31,6 +31,7 @@ from transformers.tokenization_utils_base import TextInput
 from vllm.config import VllmConfig
 from vllm.inputs import MultiModalDataDict
 from vllm.logger import init_logger
+from vllm.model_executor.layers.linear import ReplicatedLinear
 from vllm.model_executor.model_loader.weight_utils import default_weight_loader
 from vllm.model_executor.models.interfaces import SupportsMultiModal
 from vllm.model_executor.models.utils import (
@@ -57,6 +58,8 @@ from vllm.multimodal.processing.processor import (
 from vllm.sequence import IntermediateTensors
 from vllm.tokenizers import cached_tokenizer_from_config
 from vllm.tokenizers.mistral import MistralTokenizer
+
+from vllm_omni.quantization.component_config import ComponentQuantizationConfig
 
 weight_norm = torch.nn.utils.parametrizations.weight_norm
 
@@ -196,29 +199,53 @@ def from_nested_dict(cls, d):
     return cls(**kwargs)
 
 
+def _is_fp8_quant_config(quant_config) -> bool:
+    return quant_config is not None and quant_config.get_name() == "fp8"
+
+
+def _make_acoustic_linear(input_size, output_size, bias, quant_config, prefix):
+    return ReplicatedLinear(
+        input_size,
+        output_size,
+        bias=bias,
+        quant_config=quant_config,
+        prefix=prefix,
+        return_bias=False,
+        disable_tp=True,
+    )
+
+
 class FeedForward(nn.Module):
     def __init__(
         self,
         dim: int,
         hidden_dim: int,
         use_biases: bool,
+        quant_config=None,
+        prefix: str = "",
     ) -> None:
         super().__init__()
 
-        self.w1 = nn.Linear(
+        self.w1 = _make_acoustic_linear(
             dim,
             hidden_dim,
             bias=False,
+            quant_config=quant_config,
+            prefix=maybe_prefix(prefix, "w1"),
         )
-        self.w2 = nn.Linear(
+        self.w2 = _make_acoustic_linear(
             hidden_dim,
             dim,
             bias=use_biases,
+            quant_config=quant_config,
+            prefix=maybe_prefix(prefix, "w2"),
         )
-        self.w3 = nn.Linear(
+        self.w3 = _make_acoustic_linear(
             dim,
             hidden_dim,
             bias=False,
+            quant_config=quant_config,
+            prefix=maybe_prefix(prefix, "w3"),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -233,6 +260,8 @@ class BidirectionalAttention(nn.Module):
         self,
         args: AcousticTransformerArgs,
         layer_id: int,
+        quant_config=None,
+        prefix: str = "",
     ) -> None:
         super().__init__()
         self.args = args
@@ -248,25 +277,33 @@ class BidirectionalAttention(nn.Module):
         # - Mistral LM: only accepts bias=args.use_biases for wo,
         #               everything else is False
         # - Whisper: wk always has bias=False, and bias=True for wq, wv and wo
-        self.wq = nn.Linear(
+        self.wq = _make_acoustic_linear(
             args.dim,
             args.n_heads * args.head_dim,
             bias=args.use_biases,
+            quant_config=quant_config,
+            prefix=maybe_prefix(prefix, "wq"),
         )
-        self.wk = nn.Linear(
+        self.wk = _make_acoustic_linear(
             args.dim,
             args.n_kv_heads * args.head_dim,
             bias=False,
+            quant_config=quant_config,
+            prefix=maybe_prefix(prefix, "wk"),
         )
-        self.wv = nn.Linear(
+        self.wv = _make_acoustic_linear(
             args.dim,
             args.n_kv_heads * args.head_dim,
             bias=args.use_biases,
+            quant_config=quant_config,
+            prefix=maybe_prefix(prefix, "wv"),
         )
-        self.wo = nn.Linear(
+        self.wo = _make_acoustic_linear(
             (args.n_heads * args.head_dim),
             args.dim,
             bias=args.use_biases,
+            quant_config=quant_config,
+            prefix=maybe_prefix(prefix, "wo"),
         )
 
         self.softmax_scale: float = self.args.head_dim**-0.5
@@ -328,6 +365,8 @@ class AcousticTransformerBlock(nn.Module):
         self,
         layer_id: int,
         args: AcousticTransformerArgs,
+        quant_config=None,
+        prefix: str = "",
     ) -> None:
         super().__init__()
         self._layer_id = layer_id
@@ -336,12 +375,16 @@ class AcousticTransformerBlock(nn.Module):
         self.attention = BidirectionalAttention(
             args,
             layer_id=layer_id,
+            quant_config=quant_config,
+            prefix=maybe_prefix(prefix, "attention"),
         )
 
         self.feed_forward = FeedForward(
             args.dim,
             args.hidden_dim,
             args.use_biases,
+            quant_config=quant_config,
+            prefix=maybe_prefix(prefix, "feed_forward"),
         )
 
         self.attention_norm = rms_norm(
@@ -394,8 +437,12 @@ class FlowMatchingAudioTransformer(nn.Module):
     def __init__(
         self,
         audio_model_args: dict,
+        quant_config=None,
+        prefix: str = "",
     ) -> None:
         super().__init__()
+        self.quant_config = quant_config
+        self.prefix = prefix
         if "codebook_sizes" in audio_model_args:
             codebook_sizes = [int(c) for c in audio_model_args.pop("codebook_sizes").split(",")]
             audio_model_args.update(
@@ -464,30 +511,44 @@ class FlowMatchingAudioTransformer(nn.Module):
         # override the input projection embedding
         input_dim = self.acoustic_embeddings_dim
 
-        self.input_projection = nn.Linear(input_dim, self.acoustic_transformer_args.dim, bias=False)
-        self.time_projection = nn.Linear(
+        self.input_projection = _make_acoustic_linear(
+            input_dim,
+            self.acoustic_transformer_args.dim,
+            bias=False,
+            quant_config=self.quant_config,
+            prefix=maybe_prefix(self.prefix, "input_projection"),
+        )
+        self.time_projection = _make_acoustic_linear(
             self.acoustic_transformer_args.dim,
             self.acoustic_transformer_args.dim,
             bias=False,
+            quant_config=self.quant_config,
+            prefix=maybe_prefix(self.prefix, "time_projection"),
         )
-        self.llm_projection = nn.Linear(
+        self.llm_projection = _make_acoustic_linear(
             self.acoustic_transformer_args.input_dim,
             self.acoustic_transformer_args.dim,
             bias=False,
+            quant_config=self.quant_config,
+            prefix=maybe_prefix(self.prefix, "llm_projection"),
         )
 
     def _init_output_layer(self) -> None:
         padded_codebook_sizes = self.model_args.get_codebook_sizes(pad_to_multiple=128)
-        self.semantic_codebook_output = nn.Linear(
+        self.semantic_codebook_output = _make_acoustic_linear(
             self.acoustic_transformer_args.dim,
             padded_codebook_sizes[0],
-            self.acoustic_transformer_args.use_biases,
+            bias=self.acoustic_transformer_args.use_biases,
+            quant_config=self.quant_config,
+            prefix=maybe_prefix(self.prefix, "semantic_codebook_output"),
         )
-        self.acoustic_codebook_output = nn.Linear(
-            in_features=self.acoustic_transformer_args.dim,
+        self.acoustic_codebook_output = _make_acoustic_linear(
+            self.acoustic_transformer_args.dim,
             # we predict a float for every codebook
-            out_features=self.model_args.n_acoustic_codebook,
+            self.model_args.n_acoustic_codebook,
             bias=False,
+            quant_config=self.quant_config,
+            prefix=maybe_prefix(self.prefix, "acoustic_codebook_output"),
         )
 
     def _init_layers(self) -> None:
@@ -497,6 +558,8 @@ class FlowMatchingAudioTransformer(nn.Module):
             block = AcousticTransformerBlock(
                 layer_id=layer_id,
                 args=self.acoustic_transformer_args,
+                quant_config=self.quant_config,
+                prefix=maybe_prefix(self.prefix, f"layers.{layer_id}"),
             )
             self.layers[str(layer_id)] = block
 
@@ -912,6 +975,21 @@ class VoxtralTTSAudioGenerationForConditionalGeneration(nn.Module, SupportsMulti
 
         config = vllm_config.model_config.hf_config
         self.config = config
+        quant_config = vllm_config.quant_config
+        acoustic_quant_config = None
+        if isinstance(quant_config, ComponentQuantizationConfig):
+            acoustic_quant_config = quant_config.resolve(maybe_prefix(prefix, "acoustic_transformer"))
+        elif _is_fp8_quant_config(quant_config):
+            acoustic_quant_config = quant_config
+            quant_config = ComponentQuantizationConfig(
+                component_configs={
+                    maybe_prefix(prefix, "language_model"): quant_config,
+                    maybe_prefix(prefix, "audio_tokenizer"): None,
+                },
+                default_config=None,
+            )
+            vllm_config = replace(vllm_config, quant_config=quant_config)
+
         self.language_model = init_vllm_registered_model(
             vllm_config=vllm_config,
             hf_config=config.text_config,
@@ -926,6 +1004,7 @@ class VoxtralTTSAudioGenerationForConditionalGeneration(nn.Module, SupportsMulti
         self.downsample_factor = self.audio_tokenizer.downsample_factor
         self.acoustic_transformer = FlowMatchingAudioTransformer(
             self.config.audio_config["audio_model_args"],
+            quant_config=acoustic_quant_config,
         )
 
         audio_encoder = self.tokenizer.instruct.audio_encoder

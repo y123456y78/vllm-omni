@@ -76,6 +76,36 @@ def _resolve_stage_config(run_level: str) -> str:
     return STAGE_CONFIG
 
 
+def _extract_audio_array(outputs):
+    """Extract final-stage audio from Omni outputs."""
+    assert len(outputs) > 0, "No outputs generated"
+
+    audio_data = None
+    for o in outputs:
+        mm = getattr(o, "multimodal_output", None)
+        if mm and "audio" in mm:
+            audio_data = mm["audio"]
+            break
+
+    assert audio_data is not None, "No audio output found in any stage output"
+
+    if isinstance(audio_data, list):
+        audio_tensor = torch.cat(audio_data)
+    elif isinstance(audio_data, torch.Tensor):
+        audio_tensor = audio_data
+    else:
+        audio_tensor = torch.tensor(audio_data)
+
+    return audio_tensor.float().cpu().numpy()
+
+
+def _assert_valid_audio(audio_array):
+    assert len(audio_array) > MIN_AUDIO_SAMPLES, (
+        f"Audio too short: {len(audio_array)} samples, expected > {MIN_AUDIO_SAMPLES}"
+    )
+    assert np.max(np.abs(audio_array)) > 0.01, "Audio appears to be silence"
+
+
 @pytest.mark.advanced_model
 @pytest.mark.omni
 @hardware_test(res={"cuda": "H100"}, num_cards=1)
@@ -98,34 +128,31 @@ def test_voxtral_tts_offline_basic(run_level):
 
         outputs = list(omni.generate([inputs], sampling_params_list))
 
-        assert len(outputs) > 0, "No outputs generated"
+        _assert_valid_audio(_extract_audio_array(outputs))
 
-        # Find audio output from the final stage
-        audio_data = None
-        for o in outputs:
-            mm = getattr(o, "multimodal_output", None)
-            if mm and "audio" in mm:
-                audio_data = mm["audio"]
-                break
 
-        assert audio_data is not None, "No audio output found in any stage output"
+@pytest.mark.advanced_model
+@pytest.mark.omni
+@hardware_test(res={"cuda": "H100"}, num_cards=1)
+def test_voxtral_tts_offline_fp8_basic(run_level):
+    """Test basic Voxtral TTS offline inference with FP8 quantization."""
+    stage_config = _resolve_stage_config(run_level)
 
-        # Concatenate audio chunks if returned as a list of tensors
-        if isinstance(audio_data, list):
-            audio_tensor = torch.cat(audio_data)
-        elif isinstance(audio_data, torch.Tensor):
-            audio_tensor = audio_data
-        else:
-            audio_tensor = torch.tensor(audio_data)
+    with OmniRunner(
+        MODEL,
+        stage_configs_path=stage_config,
+        enforce_eager=True,
+        quantization="fp8",
+    ) as runner:
+        omni = runner.omni
+        inputs = _compose_request(MODEL, TEST_TEXT, VOICE)
 
-        audio_array = audio_tensor.float().cpu().numpy()
+        sampling_params = SamplingParams(max_tokens=2500)
+        sampling_params_list = [sampling_params, sampling_params]
 
-        assert len(audio_array) > MIN_AUDIO_SAMPLES, (
-            f"Audio too short: {len(audio_array)} samples, expected > {MIN_AUDIO_SAMPLES}"
-        )
+        outputs = list(omni.generate([inputs], sampling_params_list))
 
-        # Verify audio isn't all zeros / silence
-        assert np.max(np.abs(audio_array)) > 0.01, "Audio appears to be silence"
+        _assert_valid_audio(_extract_audio_array(outputs))
 
     finally:
         omni.close()
@@ -187,12 +214,7 @@ def test_voxtral_tts_offline_streaming(run_level):
 
             audio_array = np.concatenate(all_audio_chunks)
 
-            assert len(audio_array) > MIN_AUDIO_SAMPLES, (
-                f"Audio too short: {len(audio_array)} samples, expected > {MIN_AUDIO_SAMPLES}"
-            )
-
-            # Verify audio isn't all zeros / silence
-            assert np.max(np.abs(audio_array)) > 0.01, "Audio appears to be silence"
+            _assert_valid_audio(audio_array)
 
         finally:
             async_omni.shutdown()
