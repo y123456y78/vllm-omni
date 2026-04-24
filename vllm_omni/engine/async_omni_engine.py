@@ -274,6 +274,7 @@ class AsyncOmniEngine:
         **kwargs: Any,
     ) -> None:
         self.model = model
+        self.tokenizer: str | None = kwargs.get("tokenizer")
         self.diffusion_batch_size = diffusion_batch_size
         startup_timeout = int(init_timeout)
 
@@ -392,6 +393,8 @@ class AsyncOmniEngine:
                             self.model,
                             stage_connector_spec=stage_connector_spec,
                         )
+                        if "tokenizer" not in engine_args_dict and self.tokenizer is not None:
+                            engine_args_dict["tokenizer"] = self.tokenizer
                         omni_conn_cfg, omni_from, omni_to = omni_kv_connector
                         if omni_conn_cfg:
                             omni_kv = engine_args_dict.get("omni_kv_config") or {}
@@ -505,6 +508,8 @@ class AsyncOmniEngine:
                 self.model,
                 stage_connector_spec=stage_connector_spec,
             )
+            if "tokenizer" not in engine_args_dict and self.tokenizer is not None:
+                engine_args_dict["tokenizer"] = self.tokenizer
             vllm_config, executor_class = build_vllm_config(
                 stage_cfg,
                 self.model,
