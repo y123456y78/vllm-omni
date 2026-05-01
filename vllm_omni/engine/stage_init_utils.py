@@ -415,8 +415,7 @@ def build_engine_args_dict(
 
     engine_args_dict = _to_dict(engine_args)
     stage_defines_tokenizer = (
-        engine_args_dict.get("tokenizer") is not None
-        or engine_args_dict.get("tokenizer_subdir") is not None
+        engine_args_dict.get("tokenizer") is not None or engine_args_dict.get("tokenizer_subdir") is not None
     )
     model = _resolve_model_tokenizer_paths(model, engine_args_dict)
     apply_cli_tokenizer(
