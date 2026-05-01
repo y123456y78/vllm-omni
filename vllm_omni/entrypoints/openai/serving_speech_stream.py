@@ -226,6 +226,7 @@ class OmniStreamingSpeechHandler:
             x_vector_only_mode=config.x_vector_only_mode,
             speaker_embedding=config.speaker_embedding,
             stream=config.stream_audio,
+            extra_params=config.extra_params,
         )
 
         start_payload = {
