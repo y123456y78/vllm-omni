@@ -612,10 +612,8 @@ def run_headless(args: argparse.Namespace) -> None:
         stage_cfg,
         model,
         stage_connector_spec=stage_connector_spec,
+        cli_tokenizer=getattr(args, "tokenizer", None),
     )
-    tokenizer = getattr(args, "tokenizer", None)
-    if "tokenizer" not in engine_args_dict and tokenizer is not None:
-        engine_args_dict["tokenizer"] = tokenizer
 
     # Inject omni KV connector config so the engine runner can initialize the
     # correct connector (sender/receiver role, type, addresses, etc.).
