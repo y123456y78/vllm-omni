@@ -41,6 +41,7 @@ async def run_streaming(inputs, sampling_params_list, model_name, args, output_d
         model=model_name,
         stage_configs_path=args.stage_configs_path,
         log_stats=args.log_stats,
+        quantization=args.quantization,
     )
 
     # Normalize to a list so batch and single-input share the same code path
@@ -193,6 +194,7 @@ def run_non_streaming(inputs, sampling_params_list, model_name, args, output_dir
         model=model_name,
         log_stats=args.log_stats,
         stage_configs_path=args.stage_configs_path,
+        quantization=args.quantization,
     )
 
     if args.profiling_mode:
@@ -296,6 +298,12 @@ def parse_args() -> Namespace:
         type=str,
         default=None,
         help="Voice to use instead of audio file.",
+    )
+    parser.add_argument(
+        "--quantization",
+        type=str,
+        default=None,
+        help="Quantization method (e.g. 'fp8'). Applied to the language model only.",
     )
     return parser.parse_args()
 
