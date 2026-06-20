@@ -275,6 +275,13 @@ class StreamingSpeechSessionConfig(BaseModel):
             "Requires response_format='pcm'. Speed adjustment is not supported when streaming."
         ),
     )
+    extra_params: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Optional model-specific parameters forwarded to the per-sentence "
+            "OpenAICreateSpeechRequest.extra_params (e.g. {'cfg_alpha': 1.2} for Voxtral)."
+        ),
+    )
     split_granularity: Literal["sentence", "clause"] = Field(
         default="sentence",
         description=(
